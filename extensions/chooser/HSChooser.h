@@ -47,14 +47,16 @@
 @property(nonatomic, retain) NSArray *filteredChoices;
 
 // Lua callback references
+@property(nonatomic) int hideCallbackRef;
 @property(nonatomic) int showCallbackRef;
 @property(nonatomic) int choicesCallbackRef;
 @property(nonatomic) int queryChangedCallbackRef;
 @property(nonatomic) int completionCallbackRef;
 @property(nonatomic) int rightClickCallbackRef;
+@property(nonatomic) int invalidCallbackRef;
 
 // A pointer to the hs.chooser module's references table
-@property(nonatomic) int *refTable;
+@property(nonatomic) LSRefTable refTable;
 
 // Our self-ref count
 @property(nonatomic) int selfRefCount;
@@ -63,7 +65,7 @@
 @property(nonatomic) BOOL isObservingThemeChanges;
 
 // Initialiser
-- (id)initWithRefTable:(int *)refTable completionCallbackRef:(int)completionCallbackRef;
+- (id)initWithRefTable:(LSRefTable )refTable completionCallbackRef:(int)completionCallbackRef;
 
 // Setup/display related methods
 - (void)calculateRects;

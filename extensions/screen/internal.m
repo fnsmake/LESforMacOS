@@ -7,6 +7,17 @@
 
 #define get_screen_arg(L, idx) (__bridge NSScreen*)*((void**)luaL_checkudata(L, idx, USERDATA_TAG))
 
+#pragma mark - Private API declarations
+
+extern void CoreDisplay_Display_SetUserBrightness(CGDirectDisplayID id, double brightness)
+    __attribute__((weak_import));
+extern double CoreDisplay_Display_GetUserBrightness(CGDirectDisplayID)
+    __attribute__((weak_import));
+
+extern int DisplayServicesGetBrightness(CGDirectDisplayID display, float *brightness) __attribute__((weak_import));
+extern int DisplayServicesSetBrightness(CGDirectDisplayID display, float brightness) __attribute__((weak_import));
+
+#pragma mark - Module
 static void geom_pushrect(lua_State* L, NSRect rect) {
     lua_newtable(L);
     lua_pushnumber(L, rect.origin.x);    lua_setfield(L, -2, "x");
@@ -41,7 +52,7 @@ static dispatch_queue_t notificationQueue;
 /// Returns:
 ///  * A number containing the ID of the screen
 static int screen_id(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
@@ -60,24 +71,28 @@ static int screen_id(lua_State* L) {
 /// Returns:
 ///  * A string containing the name of the screen, or nil if an error occurred
 static int screen_name(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
-    CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
+    if (@available(macOS 10.15, *)) {
+        [skin pushNSObject:screen.localizedName] ;
+    } else {
+        CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    CFDictionaryRef deviceInfo = IODisplayCreateInfoDictionary(CGDisplayIOServicePort(screen_id), kIODisplayOnlyPreferredName);
+        CFDictionaryRef deviceInfo = IODisplayCreateInfoDictionary(CGDisplayIOServicePort(screen_id), kIODisplayOnlyPreferredName);
 #pragma clang diagnostic pop
-    NSDictionary *localizedNames = [(__bridge NSDictionary *)deviceInfo objectForKey:(NSString *)[NSString stringWithUTF8String:kDisplayProductName]];
+        NSDictionary *localizedNames = [(__bridge NSDictionary *)deviceInfo objectForKey:(NSString *)[NSString stringWithUTF8String:kDisplayProductName]];
 
-    if ([localizedNames count])
-        lua_pushstring(L, [[localizedNames objectForKey:[[localizedNames allKeys] objectAtIndex:0]] UTF8String]);
-    else
-        lua_pushnil(L);
+        if ([localizedNames count])
+            lua_pushstring(L, [[localizedNames objectForKey:[[localizedNames allKeys] objectAtIndex:0]] UTF8String]);
+        else
+            lua_pushnil(L);
 
-    CFRelease(deviceInfo);
+        CFRelease(deviceInfo);
+    }
 
     return 1;
 }
@@ -119,9 +134,11 @@ enum {
 ///   * w - A number containing the width of the screen mode in points
 ///   * h - A number containing the height of the screen mode in points
 ///   * scale - A number containing the scaling factor of the screen mode (typically `1` for a native mode, `2` for a HiDPI mode)
-///   * desc - A string containing a representation of the mode as used in `hs.screen:availableModes()` - e.g. "1920x1080@2x"
+///   * freq - A number containing the vertical refresh rate in Hz
+///   * depth - A number containing the bit depth
+///   * desc - A string containing a representation of the mode as used in `hs.screen:availableModes()` - e.g. "1920x1080@2x 60Hz 4bpp"
 static int screen_currentMode(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
@@ -142,7 +159,13 @@ static int screen_currentMode(lua_State* L) {
     lua_pushnumber(L, (double)mode.density);
     lua_setfield(L, -2, "scale");
 
-    lua_pushstring(L, [[NSString stringWithFormat:@"%dx%d@%.0fx", mode.width, mode.height, (double)mode.density] UTF8String]);
+    lua_pushnumber(L, mode.freq);
+    lua_setfield(L, -2, "freq");
+
+    lua_pushnumber(L, mode.depth);
+    lua_setfield(L, -2, "depth");
+
+    lua_pushstring(L, [[NSString stringWithFormat:@"%dx%d@%.0fx %huHz %ubpp", mode.width, mode.height, (double)mode.density, mode.freq, mode.depth] UTF8String]);
     lua_setfield(L, -2, "desc");
 
     return 1;
@@ -160,12 +183,14 @@ static int screen_currentMode(lua_State* L) {
 ///   * w - A number containing the width of the screen mode in points
 ///   * h - A number containing the height of the screen mode in points
 ///   * scale - A number containing the scaling factor of the screen mode (typically `1` for a native mode, `2` for a HiDPI mode)
+///   * freq - A number containing the vertical refresh rate in Hz
+///   * depth - A number containing the bit depth of the display mode
 ///
 /// Notes:
-///  * Only 32-bit colour modes are returned. If you really need to know about 16-bit modes, please file an Issue on GitHub
+///  * Prior to 0.9.83, only 32-bit colour modes would be returned, but now all colour depths are returned. This has necessitated changing the naming of the modes in the returned table.
 ///  * "points" are not necessarily the same as pixels, because they take the scale factor into account (e.g. "1440x900@2x" is a 2880x1800 screen resolution, with a scaling factor of 2, i.e. with HiDPI pixel-doubled rendering enabled), however, they are far more useful to work with than native pixel modes, when a Retina screen is involved. For non-retina screens, points and pixels are equivalent.
 static int screen_availableModes(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
@@ -181,29 +206,33 @@ static int screen_availableModes(lua_State* L) {
         CGSDisplayMode mode;
         CGSGetDisplayModeDescriptionOfLength(screen_id, i, &mode, sizeof(mode));
 
-        // NSLog(@"Found a mode: %dx%d@%.0fx, %dbit", mode.width, mode.height, mode.density, (mode.depth == 4) ? 32 : 16);
-        if (mode.depth == 4) {
-            lua_newtable(L);
+        //NSLog(@"Found a mode: %dx%d@%.0fx, %huHz, %dbit", mode.width, mode.height, (double)mode.density, mode.freq, mode.depth);
+        lua_newtable(L);
 
-            lua_pushinteger(L, mode.width);
-            lua_setfield(L, -2, "w");
+        lua_pushinteger(L, mode.width);
+        lua_setfield(L, -2, "w");
 
-            lua_pushinteger(L, mode.height);
-            lua_setfield(L, -2, "h");
+        lua_pushinteger(L, mode.height);
+        lua_setfield(L, -2, "h");
 
-            lua_pushnumber(L, (double)mode.density);
-            lua_setfield(L, -2, "scale");
+        lua_pushnumber(L, (double)mode.density);
+        lua_setfield(L, -2, "scale");
 
-            // Now push this mode table into the list-of-modes table
-            lua_setfield(L, -2, [[NSString stringWithFormat:@"%dx%d@%.0fx", mode.width, mode.height, (double)mode.density] UTF8String]);
-        }
+        lua_pushnumber(L, mode.freq);
+        lua_setfield(L, -2, "freq");
+
+        lua_pushnumber(L, mode.depth);
+        lua_setfield(L, -2, "depth");
+
+        // Now push this mode table into the list-of-modes table
+        lua_setfield(L, -2, [[NSString stringWithFormat:@"%dx%d@%.0fx %huHz %ubpp", mode.width, mode.height, (double)mode.density, mode.freq, mode.depth] UTF8String]);
     }
 
     return 1;
 }
 
 static int handleDisplayUpdate(lua_State* L, CGDisplayConfigRef config, char *name) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     CGError anError = CGCompleteDisplayConfiguration(config, kCGConfigurePermanently);
     if (anError == kCGErrorSuccess) {
         lua_pushboolean(L, true);
@@ -214,7 +243,7 @@ static int handleDisplayUpdate(lua_State* L, CGDisplayConfigRef config, char *na
     return 1;
 }
 
-/// hs.screen:setMode(width, height, scale) -> boolean
+/// hs.screen:setMode(width, height, scale, frequency, depth) -> boolean
 /// Method
 /// Sets the screen to a new mode
 ///
@@ -222,6 +251,8 @@ static int handleDisplayUpdate(lua_State* L, CGDisplayConfigRef config, char *na
 ///  * width - A number containing the width in points of the new mode
 ///  * height - A number containing the height in points of the new mode
 ///  * scale - A number containing the scaling factor of the new mode (typically 1 for native pixel resolutions, 2 for HiDPI/Retina resolutions)
+///  * frequency - A number containing the vertical refresh rate, in Hertz of the new mode
+///  * depth - A number containing the bit depth of the new mode
 ///
 /// Returns:
 ///  * A boolean, true if the requested mode was set, otherwise false
@@ -229,13 +260,16 @@ static int handleDisplayUpdate(lua_State* L, CGDisplayConfigRef config, char *na
 /// Notes:
 ///  * The available widths/heights/scales can be seen in the output of `hs.screen:availableModes()`, however, it should be noted that the CoreGraphics subsystem seems to list more modes for a given screen than it is actually prepared to set, so you may find that seemingly valid modes still return false. It is not currently understood why this is so!
 static int screen_setMode(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
-    [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TNUMBER, LS_TNUMBER, LS_TBREAK];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TNUMBER, LS_TNUMBER, LS_TNUMBER, LS_TNUMBER, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
     long width = (long)lua_tointeger(L, 2);
     long height = (long)lua_tointeger(L, 3);
     lua_Number scale = lua_tonumber(L, 4);
+    uint16_t freq = (uint16_t) lua_tointeger(L, 5);
+    uint32_t depth = (uint32_t)lua_tointeger(L, 6);
+
     CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
 
     int i, numberOfDisplayModes;
@@ -245,7 +279,7 @@ static int screen_setMode(lua_State* L) {
         CGSDisplayMode mode;
         CGSGetDisplayModeDescriptionOfLength(screen_id, i, &mode, sizeof(mode));
 
-        if (mode.depth == 4 && mode.width == width && mode.height == height && (int)mode.density == (int)scale) {
+        if (mode.depth == depth && mode.freq == freq && mode.width == width && mode.height == height && (int)mode.density == (int)scale) {
             CGDisplayConfigRef config;
             CGBeginDisplayConfiguration(&config);
             CGSConfigureDisplayMode(config, screen_id, i);
@@ -269,8 +303,8 @@ static int screen_setMode(lua_State* L) {
 ///
 /// Notes:
 ///  * This returns all displays to the gamma tables specified by the user's selected ColorSync display profiles
-static int screen_gammaRestore(lua_State* L __unused) {
-    LuaSkin *skin = [LuaSkin shared];
+static int screen_gammaRestore(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     CGDisplayRestoreColorSyncSettings();
@@ -292,7 +326,7 @@ static int screen_gammaRestore(lua_State* L __unused) {
 ///   * green
 ///   * blue
 static int screen_gammaGet(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
@@ -356,7 +390,6 @@ static int screen_gammaGet(lua_State* L) {
 }
 
 void storeInitialScreenGamma(CGDirectDisplayID display) {
-    LuaSkin *skin = [LuaSkin shared];
     uint32_t capacity = CGDisplayGammaTableCapacity(display);
     uint32_t count = 0;
     int i = 0;
@@ -383,7 +416,7 @@ void storeInitialScreenGamma(CGDirectDisplayID display) {
 
         [originalGammas setObject:gammas forKey:[NSNumber numberWithInt:display]];
     } else {
-        [skin logBreadcrumb:[NSString stringWithFormat:@"storeInitialScreenGamma: ERROR %i on display %i", result, display]];
+        [LuaSkin logBreadcrumb:[NSString stringWithFormat:@"storeInitialScreenGamma: ERROR %i on display %i", result, display]];
     }
 
     free(redTable);
@@ -393,7 +426,7 @@ void storeInitialScreenGamma(CGDirectDisplayID display) {
     return;
 }
 
-void getAllInitialScreenGammas() {
+void getAllInitialScreenGammas(void) {
     // Get the number of displays
     CGDisplayCount numDisplays;
     CGGetActiveDisplayList(0, NULL, &numDisplays);
@@ -496,7 +529,7 @@ void displayReconfigurationCallback(CGDirectDisplayID display, CGDisplayChangeSu
 /// Notes:
 ///  * If the whitepoint and blackpoint specified, are very similar, it will be impossible to read the screen. You should exercise caution, and may wish to bind a hotkey to `hs.screen.restoreGamma()` when experimenting
 static int screen_gammaSet(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TTABLE, LS_TTABLE, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
@@ -603,23 +636,39 @@ static int screen_gammaSet(lua_State* L) {
 /// Returns:
 ///  * A floating point number between 0 and 1, containing the current brightness level, or nil if the display does not support brightness queries
 static int screen_getBrightness(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
     CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
+
+    if (DisplayServicesGetBrightness != NULL) {
+        float brightness ;
+        int err = DisplayServicesGetBrightness(screen_id, &brightness) ;
+        if (err == kCGErrorSuccess) {
+            lua_pushnumber(L, (lua_Number)brightness) ;
+        } else {
+            lua_pushnil(L);
+        }
+    } else if (CoreDisplay_Display_GetUserBrightness != NULL) {
+        // Preferred API - interacts better with Night Shift, but is semi-private
+        double brightness = CoreDisplay_Display_GetUserBrightness(screen_id);
+        lua_pushnumber(L, brightness);
+    } else {
+        // Legacy API for people on older macOS
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    io_service_t service = CGDisplayIOServicePort(screen_id);
+        io_service_t service = CGDisplayIOServicePort(screen_id);
 #pragma clang diagnostic pop
-    CGDisplayErr err;
+        CGDisplayErr err;
 
-    float brightness;
-    err = IODisplayGetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), &brightness);
-    if (err != kIOReturnSuccess) {
-        lua_pushnil(L);
-    } else {
-        lua_pushnumber(L, (lua_Number)brightness);
+        float brightness;
+        err = IODisplayGetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), &brightness);
+        if (err != kIOReturnSuccess) {
+            lua_pushnil(L);
+        } else {
+            lua_pushnumber(L, (lua_Number)brightness);
+        }
     }
     return 1;
 }
@@ -634,17 +683,26 @@ static int screen_getBrightness(lua_State *L) {
 /// Returns:
 ///  * The `hs.screen` object
 static int screen_setBrightness(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
     CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
+
+    double brightness = lua_tonumber(L, 2);
+    if (DisplayServicesSetBrightness != NULL) {
+        DisplayServicesSetBrightness(screen_id, brightness) ;
+    } else if (CoreDisplay_Display_SetUserBrightness != NULL) {
+        // Preferred API - interacts better with Night Shift, but is semi-private
+        CoreDisplay_Display_SetUserBrightness(screen_id, brightness);
+    } else {
+        // Legacy API for people on older macOS
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    io_service_t service = CGDisplayIOServicePort(screen_id);
+        io_service_t service = CGDisplayIOServicePort(screen_id);
 #pragma clang diagnostic pop
-
-    IODisplaySetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), lua_tonumber(L, 2));
+        IODisplaySetFloatParameter(service, kNilOptions, CFSTR(kIODisplayBrightnessKey), brightness);
+    }
 
     lua_pushvalue(L, 1);
     return 1;
@@ -660,7 +718,7 @@ static int screen_setBrightness(lua_State *L) {
 /// Returns:
 ///  * A string containing the UUID, or nil if an error occurred.
 static int screen_getUUID(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     NSScreen *screen = get_screen_arg(L, 1);
@@ -695,7 +753,7 @@ CG_EXTERN void CGDisplaySetInvertedPolarity(bool invertedPolarity);
 /// Returns:
 ///  * A boolean, true if the ForceToGray mode is set, otherwise false
 static int screen_getForceToGray(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     bool isGrayscale = CGDisplayUsesForceToGray();
@@ -714,7 +772,7 @@ static int screen_getForceToGray(lua_State* L) {
 /// Returns:
 ///  * None
 static int screen_setForceToGray(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBOOLEAN, LS_TBREAK];
 
     int forceGrayscale = lua_toboolean(L, 1);
@@ -733,7 +791,7 @@ static int screen_setForceToGray(lua_State* L) {
 /// Returns:
 ///  * A boolean, true if the InvertedPolarity mode is set, otherwise false
 static int screen_getInvertedPolarity(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     bool isInvertedPolarity = CGDisplayUsesInvertedPolarity();
@@ -752,7 +810,7 @@ static int screen_getInvertedPolarity(lua_State* L) {
 /// Returns:
 ///  * None
 static int screen_setInvertedPolarity(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBOOLEAN, LS_TBREAK];
 
     int forceInvertedPolarity = lua_toboolean(L, 1);
@@ -762,7 +820,6 @@ static int screen_setInvertedPolarity(lua_State* L) {
 }
 
 void screen_gammaReapply(CGDirectDisplayID display) {
-    LuaSkin *skin = [LuaSkin shared];
     NSDictionary *gammas = [currentGammas objectForKey:[NSNumber numberWithInt:display]];
     if (!gammas) {
         return;
@@ -787,7 +844,7 @@ void screen_gammaReapply(CGDirectDisplayID display) {
     CGError result = CGSetDisplayTransferByTable(display, count, redTable, greenTable, blueTable);
 
     if (result != kCGErrorSuccess) {
-        [skin logBreadcrumb:[NSString stringWithFormat:@"screen_gammaReapply: ERROR: %i on display: %i", result, display]];
+        [LuaSkin logBreadcrumb:[NSString stringWithFormat:@"screen_gammaReapply: ERROR: %i on display: %i", result, display]];
     } else {
         //NSLog(@"screen_gammaReapply: Success");
     }
@@ -829,7 +886,7 @@ void new_screen(lua_State* L, NSScreen* screen) {
 /// Returns:
 ///  * A table containing one or more `hs.screen` objects
 static int screen_allScreens(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     lua_newtable(L);
@@ -854,7 +911,7 @@ static int screen_allScreens(lua_State* L) {
 /// Returns:
 ///  * An `hs.screen` object
 static int screen_mainScreen(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     new_screen(L, [NSScreen mainScreen]);
@@ -872,7 +929,7 @@ static int screen_mainScreen(lua_State* L) {
 /// Returns:
 ///  * A boolean, true if the operation succeeded, otherwise false
 static int screen_setPrimary(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     int deltaX, deltaY;
@@ -949,7 +1006,7 @@ static int screen_setPrimary(lua_State* L) {
 /// Returns:
 ///  * If the rotation is being set, a boolean, true if the operation succeeded, otherwise false. If the rotation is being queried, a number will be returned
 static int screen_rotate(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER|LS_TOPTIONAL, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
@@ -1025,13 +1082,13 @@ cleanup:
 /// Returns:
 ///  * true if the operation succeeded, otherwise false
 static int screen_setOrigin(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TNUMBER, LS_TBREAK];
 
     NSScreen* screen = get_screen_arg(L, 1);
     int x = (int)lua_tointeger(L, 2);
     int y = (int)lua_tointeger(L, 3);
-    
+
     CGDisplayCount maxDisplays = 32;
     CGDisplayCount displayCount, i;
     CGDirectDisplayID *onlineDisplays = NULL;
@@ -1047,13 +1104,76 @@ static int screen_setOrigin(lua_State* L) {
             CGConfigureDisplayOrigin(config, dID, x, y);
         }
     }
-    
+
     free(onlineDisplays);
     return handleDisplayUpdate(L, config, "CGConfigureDisplayOrigin");
 
 cleanup:
     free(onlineDisplays);
     lua_pushboolean(L, false);
+    return 1;
+}
+
+/// hs.screen:mirrorOf(aScreen[, permanent]) -> bool
+/// Method
+/// Make this screen mirror another
+///
+/// Parameters:
+///  * aScreen - an hs.screen object you wish to mirror
+///  * permament - an optional bool, true if this should be configured permanently, false if it should apply just for this login session. Defaults to false.
+///
+/// Returns:
+///  * true if the operation succeeded, otherwise false
+static int screen_mirrorOf(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN|LS_TOPTIONAL, LS_TBREAK];
+
+    NSScreen *mirrorTarget = get_screen_arg(L, 1);
+    NSScreen *mirrorSource = get_screen_arg(L, 2);
+
+    BOOL permanent = lua_toboolean(L, 3);
+
+    CGDirectDisplayID sourceID = [[[mirrorSource deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+    CGDirectDisplayID targetID = [[[mirrorTarget deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+
+    CGDisplayConfigRef config;
+    CGError result;
+
+    CGBeginDisplayConfiguration(&config);
+    result = CGConfigureDisplayMirrorOfDisplay(config, targetID, sourceID);
+    CGCompleteDisplayConfiguration(config, permanent ? kCGConfigurePermanently : kCGConfigureForSession);
+
+    lua_pushboolean(L, result == kCGErrorSuccess);
+    return 1;
+}
+
+/// hs.screen:mirrorStop([permanent]) -> bool
+/// Method
+/// Stops this screen mirroring another
+///
+/// Parameters:
+///  * permanent - an optional bool, true if this should be configured permanently, false if it should apply just for this login session. Defaults to false.
+///
+/// Returns:
+///  * true if the operation succeeded, otherwise false
+static int screen_mirrorStop(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN|LS_TOPTIONAL, LS_TBREAK];
+
+    NSScreen *screen = get_screen_arg(L, 1);
+
+    BOOL permanent = lua_toboolean(L, 2);
+
+    CGDirectDisplayID screenID = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+
+    CGDisplayConfigRef config;
+    CGError result;
+
+    CGBeginDisplayConfiguration(&config);
+    result = CGConfigureDisplayMirrorOfDisplay(config, screenID, kCGNullDirectDisplay);
+    CGCompleteDisplayConfiguration(config, permanent ? kCGConfigurePermanently : kCGConfigureForSession);
+
+    lua_pushboolean(L, result == kCGErrorSuccess);
     return 1;
 }
 
@@ -1129,7 +1249,7 @@ cleanup:
 /// Returns:
 ///  * An `hs.image` object, or nil if an error occurred
 static int screen_snapshot(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TTABLE|LS_TNIL|LS_TOPTIONAL, LS_TBREAK];
 
     NSScreen *screen = get_screen_arg(L, 1);
@@ -1157,7 +1277,7 @@ static int screen_snapshot(lua_State *L) {
 /// Notes:
 ///  * If the user has set a folder of pictures to be alternated as the desktop background, the path to that folder will be returned.
 static int screen_desktopImageURL(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK];
 
     NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
@@ -1201,7 +1321,7 @@ static int screen_desktopImageURL(lua_State *L) {
 ///    * InvertColors (only available on macOS 10.12 or later)
 ///    * DifferentiateWithoutColor
 static int screen_accessibilitySettings(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     NSWorkspace *ws = [NSWorkspace sharedWorkspace];
@@ -1231,25 +1351,28 @@ static int screens_gc(lua_State* L __unused) {
 }
 
 static int userdata_tostring(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
+    NSString *theName = @"(un-named screen)" ;
     NSScreen *screen = get_screen_arg(L, 1);
-    CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
+
+    if (@available(macOS 10.15, *)) {
+        theName = screen.localizedName ;
+    } else {
+        CGDirectDisplayID screen_id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    CFDictionaryRef deviceInfo = IODisplayCreateInfoDictionary(CGDisplayIOServicePort(screen_id), kIODisplayOnlyPreferredName);
+        CFDictionaryRef deviceInfo = IODisplayCreateInfoDictionary(CGDisplayIOServicePort(screen_id), kIODisplayOnlyPreferredName);
 #pragma clang diagnostic pop
-    NSDictionary *localizedNames = [(__bridge NSDictionary *)deviceInfo objectForKey:(NSString *)[NSString stringWithUTF8String:kDisplayProductName]];
-    NSString *theName ;
-    if ([localizedNames count])
-        theName = [localizedNames objectForKey:[[localizedNames allKeys] objectAtIndex:0]] ;
-    else
-        theName = @"(un-named screen)" ;
+        NSDictionary *localizedNames = [(__bridge NSDictionary *)deviceInfo objectForKey:(NSString *)[NSString stringWithUTF8String:kDisplayProductName]];
+        if ([localizedNames count])
+            theName = [localizedNames objectForKey:[[localizedNames allKeys] objectAtIndex:0]] ;
+        CFRelease(deviceInfo);
+    }
 
     lua_pushstring(L, [[NSString stringWithFormat:@"%s: %@ (%p)", USERDATA_TAG, theName, lua_topointer(L, 1)] UTF8String]) ;
-    CFRelease(deviceInfo);
     return 1 ;
 }
 
@@ -1284,6 +1407,8 @@ static const luaL_Reg screen_objectlib[] = {
     {"setPrimary", screen_setPrimary},
     {"desktopImageURL", screen_desktopImageURL},
     {"setOrigin", screen_setOrigin},
+    {"mirrorOf", screen_mirrorOf},
+    {"mirrorStop", screen_mirrorStop},
 
     {"__tostring", userdata_tostring},
     {"__gc", screen_gc},
@@ -1298,8 +1423,8 @@ static const luaL_Reg metalib[] = {
     {NULL, NULL}
 };
 
-int luaopen_hs_screen_internal(lua_State* L __unused) {
-    LuaSkin *skin = [LuaSkin shared];
+int luaopen_hs_screen_internal(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     // Start off by initialising gamma related structures, populating them and registering appropriate callbacks
     originalGammas = [[NSMutableDictionary alloc] init];
@@ -1308,7 +1433,7 @@ int luaopen_hs_screen_internal(lua_State* L __unused) {
     notificationQueue = dispatch_queue_create("org.hammerspoon.Hammerspoon.gammaReapplyNotificationQueue", NULL);
     CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, NULL);
 
-    [skin registerLibrary:screenlib metaFunctions:metalib];
+    [skin registerLibrary:USERDATA_TAG functions:screenlib metaFunctions:metalib];
     [skin registerObject:USERDATA_TAG objectFunctions:screen_objectlib];
 
     return 1;

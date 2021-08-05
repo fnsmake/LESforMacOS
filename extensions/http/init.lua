@@ -12,7 +12,7 @@ local fnutils = require("hs.fnutils")
 --- Function
 --- Sends an HTTP GET request to a URL
 ---
---- Parameters
+--- Parameters:
 ---  * url - A string containing the URL to retrieve
 ---  * headers - A table containing string keys and values representing the request headers, or nil to add no headers
 ---
@@ -34,7 +34,7 @@ end
 --- Function
 --- Sends an HTTP POST request to a URL
 ---
---- Parameters
+--- Parameters:
 ---  * url - A string containing the URL to submit to
 ---  * data - A string containing the request body, or nil to send no body
 ---  * headers - A table containing string keys and values representing the request headers, or nil to add no headers
@@ -426,6 +426,17 @@ end
 local encodeForQuery = http.encodeForQuery
 http.encodeForQuery = function(...)
     return (encodeForQuery(...):gsub("[%?=&+]", { ["?"] = "%3F", ["="] = "%3D", ["&"] = "%26", ["+"] = "%2B" } ))
+end
+
+-- Wrapper for legacy `hs.http.websocket(url, callback)`
+-- This is undocumented, as `hs.http.websocket` was never originally exposed/documented.
+local websocket = require("hs.websocket")
+http.websocket = function(url, callback)
+    return websocket.new(url, function(status, message)
+        if type(callback) == "function" and status == "received" then
+            return callback(message)
+        end
+    end)
 end
 
 return http

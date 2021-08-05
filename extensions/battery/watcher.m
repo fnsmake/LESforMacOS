@@ -13,7 +13,7 @@
 // Common Code
 
 #define USERDATA_TAG    "hs.battery.watcher"
-static int refTable;
+static LSRefTable refTable;
 
 // Not so common code
 
@@ -21,16 +21,24 @@ typedef struct _battery_watcher_t {
     CFRunLoopSourceRef t;
     int fn;
     bool started;
+    LSGCCanary lsCanary;
 } battery_watcher_t;
 
 static void callback(void *info) {
-    LuaSkin *skin = [LuaSkin shared];
-    _lua_stackguard_entry(skin.L);
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
 
     battery_watcher_t* t = info;
 
-    [skin pushLuaRef:refTable ref:t->fn];
-    [skin protectedCallAndError:@"hs.battery.watcher callback" nargs:0 nresults:0];
+    if (![skin checkGCCanary:t->lsCanary]) {
+        return;
+    }
+
+    _lua_stackguard_entry(skin.L);
+
+    if (t->fn != LUA_NOREF) {
+        [skin pushLuaRef:refTable ref:t->fn];
+        [skin protectedCallAndError:@"hs.battery.watcher callback" nargs:0 nresults:0];
+    }
     _lua_stackguard_exit(skin.L);
 }
 
@@ -47,7 +55,7 @@ static void callback(void *info) {
 /// Notes:
 ///  * Because the callback function accepts no arguments, tracking of state of changing battery attributes is the responsibility of the user (see https://github.com/Hammerspoon/hammerspoon/issues/166 for discussion)
 static int battery_watcher_new(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     luaL_checktype(L, 1, LUA_TFUNCTION);
 
@@ -61,6 +69,7 @@ static int battery_watcher_new(lua_State* L) {
 
     watcher->t = IOPSNotificationCreateRunLoopSource(callback, watcher);
     watcher->started = false;
+    watcher->lsCanary = [skin createGCCanary];
     return 1;
 }
 
@@ -107,13 +116,14 @@ static int battery_watcher_stop(lua_State* L) {
 }
 
 static int battery_watcher_gc(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     battery_watcher_t* watcher = luaL_checkudata(L, 1, USERDATA_TAG);
 
     lua_pushcfunction(L, battery_watcher_stop) ; lua_pushvalue(L,1); lua_call(L, 1, 1);
 
     watcher->fn = [skin luaUnref:refTable ref:watcher->fn];
+    [skin destroyGCCanary:&(watcher->lsCanary)];
     CFRunLoopSourceInvalidate(watcher->t);
     CFRelease(watcher->t);
     return 0;
@@ -149,8 +159,8 @@ static const luaL_Reg meta_gcLib[] = {
     {NULL,      NULL}
 };
 
-int luaopen_hs_battery_watcher(lua_State* L __unused) {
-    LuaSkin *skin = [LuaSkin shared];
+int luaopen_hs_battery_watcher(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     refTable = [skin registerLibraryWithObject:USERDATA_TAG functions:batteryLib metaFunctions:meta_gcLib objectFunctions:battery_metalib];
 
     return 1;

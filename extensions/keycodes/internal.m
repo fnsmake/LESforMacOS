@@ -3,7 +3,7 @@
 @import LuaSkin ;
 
 static char *USERDATA_TAG  = "hs.keycodes.callback" ;
-static int refTable;
+static LSRefTable refTable;
 
 static void pushkeycode(lua_State* L, int code, const char* key) {
     // t[key] = code
@@ -192,27 +192,37 @@ int keycodes_cachemap(lua_State* L) {
 
 @interface MJKeycodesObserver : NSObject
 @property int ref;
+@property LSGCCanary lsCanary;
 @end
 
 @implementation MJKeycodesObserver
 
-- (void) _inputSourceChanged:(NSNotification*)__unused note {
-    [self performSelectorOnMainThread:@selector(inputSourceChanged:)
-                                       withObject:nil
-                                    waitUntilDone:YES];
+- (instancetype)init {
+    self = [super init] ;
+    if (self) {
+        _ref = LUA_NOREF ;
+    }
+    return self ;
 }
 
 - (void) inputSourceChanged:(NSNotification*)__unused note {
-    LuaSkin *skin = [LuaSkin shared];
-    _lua_stackguard_entry(skin.L);
-    [skin pushLuaRef:refTable ref:self.ref];
-    [skin protectedCallAndError:@"hs.keycodes.inputSourceChanged" nargs:0 nresults:0];
-    _lua_stackguard_exit(skin.L);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.ref != LUA_NOREF) {
+            LuaSkin *skin = [LuaSkin sharedWithState:NULL];
+            if (![skin checkGCCanary:self.lsCanary]) {
+                return;
+            }
+            _lua_stackguard_entry(skin.L);
+            [skin pushLuaRef:refTable ref:self.ref];
+            [skin protectedCallAndError:@"hs.keycodes.inputSourceChanged" nargs:0 nresults:0];
+            _lua_stackguard_exit(skin.L);
+        }
+    });
 }
 
 - (void) start {
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(_inputSourceChanged:)
+                                             selector:@selector(inputSourceChanged:)
                                                  name:NSTextInputContextKeyboardSelectionDidChangeNotification
                                                object:nil];
     /* This should have made things better, but it seems to cause crashes for some, possibly because the paired removeObserver call is wrong?
@@ -238,7 +248,7 @@ int keycodes_cachemap(lua_State* L) {
 @end
 
 static int keycodes_newcallback(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     luaL_checktype(L, 1, LUA_TFUNCTION);
 
@@ -247,6 +257,7 @@ static int keycodes_newcallback(lua_State* L) {
 
     MJKeycodesObserver* observer = [[MJKeycodesObserver alloc] init];
     observer.ref = ref;
+    observer.lsCanary = [skin createGCCanary];
     [observer start];
 
     void** ud = lua_newuserdata(L, sizeof(id));
@@ -264,9 +275,14 @@ static int userdata_tostring(lua_State* L) {
 }
 
 static int keycodes_callback_gc(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     MJKeycodesObserver* observer = (__bridge_transfer MJKeycodesObserver*)*(void**)luaL_checkudata(L, 1, USERDATA_TAG);
+
+    LSGCCanary tmplsCanary = observer.lsCanary;
+    [skin destroyGCCanary:&tmplsCanary];
+    observer.lsCanary = tmplsCanary;
+
     [observer stop];
 
     observer.ref = [skin luaUnref:refTable ref:observer.ref];
@@ -284,17 +300,17 @@ NSString *getLayoutName(TISInputSourceRef layout) {
     return (__bridge NSString *)TISGetInputSourceProperty(layout, kTISPropertyLocalizedName);
 }
 
-void pushSourceIcon(TISInputSourceRef source) {
-    LuaSkin *skin = [LuaSkin shared];
+void pushSourceIcon(lua_State *L, TISInputSourceRef source) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     IconRef icon = TISGetInputSourceProperty(source, kTISPropertyIconRef);
     if (icon) {
         [skin pushNSObject:[[NSImage alloc] initWithIconRef:icon]];
     } else {
-        lua_pushnil(skin.L);
+        lua_pushnil(L);
     }
 }
 
-CFArrayRef getAllLayouts() {
+CFArrayRef getAllLayouts(void) {
     NSDictionary *properties = @{
                                  (__bridge NSString *)kTISPropertyInputSourceType : (__bridge NSString *)kTISTypeKeyboardLayout,
                                  (__bridge NSString *)kTISPropertyInputSourceIsSelectCapable: @true
@@ -302,7 +318,7 @@ CFArrayRef getAllLayouts() {
     return TISCreateInputSourceList((__bridge CFDictionaryRef)properties, false);
 }
 
-CFArrayRef getAllInputMethods() {
+CFArrayRef getAllInputMethods(void) {
     NSDictionary *properties = @{
                                  (__bridge NSString *)kTISPropertyInputSourceType : (__bridge NSString *)kTISTypeKeyboardInputMode,
                                  (__bridge NSString *)kTISPropertyInputSourceIsSelectCapable: @true
@@ -320,7 +336,7 @@ CFArrayRef getAllInputMethods() {
 /// Returns:
 ///  * If no parameter is provided, returns a string containing the source id for the current keyboard layout or input method; if a parameter is provided, returns true or false specifying whether or not the input source was able to be changed.
 static int keycodes_sourceID(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TSTRING | LS_TOPTIONAL, LS_TBREAK] ;
 
     if (lua_gettop(L) == 0) {
@@ -355,8 +371,8 @@ static int keycodes_sourceID(lua_State* L) {
 ///
 /// Returns:
 ///  * A string containing the name of the current keyboard layout
-static int keycodes_currentLayout(__unused lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+static int keycodes_currentLayout(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     TISInputSourceRef layout = TISCopyCurrentKeyboardLayoutInputSource();
     [skin pushNSObject:getLayoutName(layout)];
     CFRelease(layout);
@@ -372,10 +388,10 @@ static int keycodes_currentLayout(__unused lua_State* L) {
 ///
 /// Returns:
 ///  * An hs.image object containing the icon, if available
-static int keycodes_currentLayoutIcon(__unused lua_State* L) {
+static int keycodes_currentLayoutIcon(lua_State* L) {
     TISInputSourceRef layout = TISCopyCurrentKeyboardInputSource();
 
-    pushSourceIcon(layout);
+    pushSourceIcon(L, layout);
     CFRelease(layout);
     return 1;
 }
@@ -393,7 +409,7 @@ static int keycodes_currentLayoutIcon(__unused lua_State* L) {
 /// Notes:
 ///  * Only those layouts which can be explicitly switched to will be included in the table.  Keyboard layouts which are part of input methods are not included.  See `hs.keycodes.methods`.
 static int keycodes_layouts(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK] ;
     BOOL sourceIDsOnly = lua_gettop(L) == 1 ? (BOOL)lua_toboolean(L, 1) : NO ;
     CFArrayRef layoutRefs = getAllLayouts();
@@ -427,7 +443,7 @@ static int keycodes_layouts(lua_State* L) {
 /// Notes:
 ///  * Keyboard layouts which are not part of an input method are not included in this table.  See `hs.keycodes.layouts`.
 static int keycodes_methods(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK] ;
     BOOL sourceIDsOnly = lua_gettop(L) == 1 ? (BOOL)lua_toboolean(L, 1) : NO ;
     CFArrayRef methodRefs = getAllInputMethods();
@@ -458,7 +474,7 @@ static int keycodes_methods(lua_State* L) {
 /// Returns:
 ///  * Name of current input method, or nil
 static int keycodes_currentMethod(__unused lua_State * L) {
-    LuaSkin * skin = [LuaSkin shared];
+    LuaSkin * skin = [LuaSkin sharedWithState:L];
     CFArrayRef methodRefs = getAllInputMethods();
     NSString * currentMethod = nil;
 
@@ -488,7 +504,7 @@ static int keycodes_currentMethod(__unused lua_State * L) {
 /// Returns:
 ///  * A boolean, true if the layout was successfully changed, otherwise false
 static int keycodes_setLayout(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TSTRING, LS_TBREAK];
     NSString *desiredLayout = [skin toNSObjectAtIndex:1];
     CFArrayRef layoutRefs = getAllLayouts();
@@ -520,7 +536,7 @@ static int keycodes_setLayout(lua_State* L) {
 /// Returns:
 ///  * A boolean, true if the method was successfully changed, otherwise false
 static int keycodes_setMethod(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TSTRING, LS_TBREAK];
     NSString *desiredLayout = [skin toNSObjectAtIndex:1];
     CFArrayRef layoutRefs = getAllInputMethods();
@@ -555,7 +571,7 @@ static int keycodes_setMethod(lua_State* L) {
 /// Notes:
 ///  * Not all layouts/methods have icons, so you should assume this will return nil at some point
 static int keycodes_getIcon(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TSTRING, LS_TBREAK];
     NSString *sourceName = [skin toNSObjectAtIndex:1];
     CFArrayRef layoutRefs = getAllLayouts();
@@ -568,7 +584,7 @@ static int keycodes_getIcon(lua_State* L) {
             NSString *layoutName = getLayoutName(layout);
 
             if ([layoutName isEqualToString:sourceName]) {
-                pushSourceIcon(layout);
+                pushSourceIcon(L, layout);
                 found = YES;
                 break;
             }
@@ -581,7 +597,7 @@ static int keycodes_getIcon(lua_State* L) {
                 NSString *layoutName = getLayoutName(layout);
 
                 if ([layoutName isEqualToString:sourceName]) {
-                    pushSourceIcon(layout);
+                    pushSourceIcon(L, layout);
                     found = YES;
                     break;
                 }
@@ -627,8 +643,8 @@ static const luaL_Reg keycodeslib[] = {
     {NULL, NULL}
 };
 
-int luaopen_hs_keycodes_internal(lua_State* L __unused) {
-    LuaSkin *skin = [LuaSkin shared];
+int luaopen_hs_keycodes_internal(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     refTable = [skin registerLibraryWithObject:USERDATA_TAG functions:keycodeslib metaFunctions:nil objectFunctions:callbacklib];
 
     return 1;

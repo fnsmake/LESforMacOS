@@ -5,7 +5,7 @@
 // Common Code
 
 static const char *USERDATA_TAG = "hs.timer";
-static int refTable;
+static LSRefTable refTable;
 
 #define get_objectFromUserdata(objType, L, idx, tag) (objType*)*((void**)luaL_checkudata(L, idx, tag))
 
@@ -17,6 +17,7 @@ static int refTable;
 @property BOOL continueOnError;
 @property BOOL repeats;
 @property NSTimeInterval interval;
+@property LSGCCanary lsCanary;
 
 - (void)create:(NSTimeInterval)interval repeat:(BOOL)repeat;
 - (void)callback:(NSTimer *)timer;
@@ -34,7 +35,12 @@ static int refTable;
 }
 
 - (void)callback:(NSTimer *)timer {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
+
+    if (![skin checkGCCanary:self.lsCanary]) {
+        return;
+    }
+
     _lua_stackguard_entry(skin.L);
 
     if (!timer.isValid) {
@@ -111,6 +117,10 @@ HSTimer *createHSTimer(NSTimeInterval interval, int callbackRef, BOOL continueOn
     timer.interval = interval;
     [timer create:interval repeat:repeat];
 
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
+    // NOTE: The stringWithString call here is vital, so we get a true copy of UUIDString - we must not simply point at it, or we'll never be able to use it to detect an inconsistency later.
+    timer.lsCanary = [skin createGCCanary];
+
     return timer;
 }
 
@@ -131,7 +141,7 @@ HSTimer *createHSTimer(NSTimeInterval interval, int callbackRef, BOOL continueOn
 ///  * If `interval` is 0, the timer will not repeat (because if it did, it would be repeating as fast as your machine can manage, which seems generally unwise)
 ///  * For non-zero intervals, the lowest acceptable value for the interval is 0.00001s. Values >0 and <0.00001 will be coerced to 0.00001
 static int timer_new(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TNUMBER, LS_TFUNCTION, LS_TBOOLEAN | LS_TNIL | LS_TOPTIONAL, LS_TBREAK];
 
     // Fetch the timer configuration from Lua arguments
@@ -145,7 +155,7 @@ static int timer_new(lua_State* L) {
 
     BOOL continueOnError;
     if (lua_isboolean(L, 3))
-        continueOnError = (BOOL)lua_toboolean(L, 3) ;
+        continueOnError = lua_toboolean(L, 3) ;
     else
         continueOnError = NO ;
 
@@ -179,7 +189,7 @@ static int timer_new(lua_State* L) {
 ///  * The timer will not call the callback immediately, the timer will wait until it fires
 ///  * If the callback function results in an error, the timer will be stopped to prevent repeated error notifications (see the `continueOnError` parameter to `hs.timer.new()` to override this)
 static int timer_start(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     HSTimer* timer = get_objectFromUserdata(__bridge HSTimer, L, 1, USERDATA_TAG);
@@ -206,7 +216,7 @@ static int timer_start(lua_State* L) {
 ///  * There is no need to call `:start()` on the returned object, the timer will be already running.
 ///  * The callback can be cancelled by calling the `:stop()` method on the returned object before `sec` seconds have passed.
 static int timer_doAfter(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TNUMBER, LS_TFUNCTION, LS_TBREAK];
 
     // Fetch the timer configuration from Lua arguments
@@ -242,7 +252,7 @@ static int timer_doAfter(lua_State* L) {
 /// Notes:
 ///  * Use of this function is strongly discouraged, as it blocks all main-thread execution in Hammerspoon. This means no hotkeys or events will be processed in that time, no GUI updates will happen, and no Lua will execute. This is only provided as a last resort, or for extremely short sleeps. For all other purposes, you really should be splitting up your code into multiple functions and calling `hs.timer.doAfter()`
 static int timer_usleep(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TNUMBER, LS_TBREAK];
     useconds_t microsecs = (useconds_t)lua_tointeger(L, 1);
     usleep(microsecs);
@@ -260,7 +270,7 @@ static int timer_usleep(lua_State* L) {
 /// Returns:
 ///  * A boolean value indicating whether or not the timer is currently running.
 static int timer_running(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
     HSTimer *timer = get_objectFromUserdata(__bridge HSTimer, L, 1, USERDATA_TAG);
 
@@ -284,7 +294,7 @@ static int timer_running(lua_State* L) {
 ///   * Hammerspoon's runloop is backlogged and is catching up on missed timer triggers
 ///   * The timer object is not currently running. In this case, the return value of this method is the number of seconds since the last firing (you can check if the timer is running or not, with `hs.timer:running()`
 static int timer_nextTrigger(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
     HSTimer *timer = get_objectFromUserdata(__bridge HSTimer, L, 1, USERDATA_TAG);
 
@@ -306,7 +316,7 @@ static int timer_nextTrigger(lua_State *L) {
 /// Notes:
 ///  * If the timer is not already running, this will start it
 static int timer_setNextTrigger(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER, LS_TBREAK];
     HSTimer *timer = get_objectFromUserdata(__bridge HSTimer, L, 1, USERDATA_TAG);
 
@@ -335,7 +345,7 @@ static int timer_setNextTrigger(lua_State *L) {
 /// Notes:
 ///  * This cannot be used on a timer which has already stopped running
 static int timer_trigger(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
     HSTimer *timer = get_objectFromUserdata(__bridge HSTimer, L, 1, USERDATA_TAG);
 
@@ -355,7 +365,7 @@ static int timer_trigger(lua_State *L) {
 /// Returns:
 ///  * The `hs.timer` object
 static int timer_stop(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
     HSTimer *timer = get_objectFromUserdata(__bridge HSTimer, L, 1, USERDATA_TAG);
     lua_settop(L, 1);
@@ -366,13 +376,18 @@ static int timer_stop(lua_State* L) {
 }
 
 static int timer_gc(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     HSTimer *timer = get_objectFromUserdata(__bridge_transfer HSTimer, L, 1, USERDATA_TAG);
 
     if (timer) {
         [timer stop];
         timer.fnRef = [skin luaUnref:refTable ref:timer.fnRef];
         timer.t = nil;
+
+        LSGCCanary tmpLSUUID = timer.lsCanary;
+        [skin destroyGCCanary:&tmpLSUUID];
+        timer.lsCanary = tmpLSUUID;
+
         timer = nil;
     }
 
@@ -388,7 +403,7 @@ static int meta_gc(lua_State* __unused L) {
 }
 
 static int userdata_tostring(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
     HSTimer *timer = get_objectFromUserdata(__bridge HSTimer, L, 1, USERDATA_TAG);
     NSString* title ;
@@ -418,7 +433,7 @@ static int userdata_tostring(lua_State* L) {
 /// Notes:
 ///  * This has much better precision than `os.time()`, which is limited to whole seconds.
 static int timer_getSecondsSinceEpoch(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     struct timeval v;
@@ -479,9 +494,9 @@ static const luaL_Reg meta_gcLib[] = {
     {NULL,      NULL}
 };
 
-int luaopen_hs_timer_internal(lua_State* L __unused) {
-    LuaSkin *skin = [LuaSkin shared];
-    refTable = [skin registerLibrary:timerLib metaFunctions:meta_gcLib];
+int luaopen_hs_timer_internal(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    refTable = [skin registerLibrary:USERDATA_TAG functions:timerLib metaFunctions:meta_gcLib];
     [skin registerObject:USERDATA_TAG objectFunctions:timer_metalib];
 
     return 1;

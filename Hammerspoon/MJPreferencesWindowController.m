@@ -72,7 +72,7 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
     [self.showMenuIconCheckbox setState: MJMenuIconVisible() ? NSOnState : NSOffState];
     [self.keepConsoleOnTopCheckbox setState: MJConsoleWindowAlwaysOnTop() ? NSOnState : NSOffState];
     [self.uploadCrashDataCheckbox setState: HSUploadCrashData() ? NSOnState : NSOffState];
-#ifndef CRASHLYTICS_API_KEY
+#ifndef SENTRY_API_URL
     [self.uploadCrashDataCheckbox setState:NSOffState];
     [self.uploadCrashDataCheckbox setEnabled:NO];
 #endif
@@ -120,7 +120,7 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
         [self.updatesCheckbox setEnabled:NO];
     }
 
-#ifndef CRASHLYTICS_API_KEY
+#ifndef SENTRY_API_URL
     [self.uploadCrashDataCheckbox setState:NSOffState];
     [self.uploadCrashDataCheckbox setEnabled:NO];
 #endif
@@ -200,7 +200,7 @@ void PreferencesDarkModeSetEnabled(BOOL enabled) {
 }
 
 - (IBAction) privacyPolicyClicked:(id)sender {
-    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"http://www.hammerspoon.org/privacy"]];
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://www.hammerspoon.org/privacy"]];
 }
 
 - (void) dockMenuProblemAlertDidEnd:(NSAlert *)alert returnCode:(NSInteger)returnCode contextInfo:(void *)contextInfo {

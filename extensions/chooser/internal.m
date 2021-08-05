@@ -4,7 +4,7 @@
 
 #define get_objectFromUserdata(objType, L, idx, tag) (objType*)*((void**)luaL_checkudata(L, idx, tag))
 
-static int refTable = LUA_NOREF;
+static LSRefTable refTable = LUA_NOREF;
 
 #pragma mark - Lua API defines
 static int userdata_gc(lua_State *L);
@@ -24,7 +24,7 @@ static int userdata_gc(lua_State *L);
 /// Notes:
 ///  * As of macOS Sierra and later, if you want a `hs.chooser` object to appear above full-screen windows you must hide the Hammerspoon Dock icon first using: `hs.dockicon.hide()`
 static int chooserNew(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TFUNCTION, LS_TBREAK];
 
     // Parse function arguents
@@ -32,7 +32,7 @@ static int chooserNew(lua_State *L) {
     int completionCallbackRef = [skin luaRef:refTable];
 
     // Create the HSChooser object with our arguments
-    HSChooser *chooser = [[HSChooser alloc] initWithRefTable:&refTable completionCallbackRef:completionCallbackRef];
+    HSChooser *chooser = [[HSChooser alloc] initWithRefTable:refTable completionCallbackRef:completionCallbackRef];
     [skin pushNSObject:chooser];
 
     return 1;
@@ -50,7 +50,7 @@ static int chooserNew(lua_State *L) {
 /// Returns:
 ///  * The hs.chooser object
 static int chooserShow(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -77,7 +77,7 @@ static int chooserShow(lua_State *L) {
 /// Returns:
 ///  * The `hs.chooser` object
 static int chooserHide(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -98,7 +98,7 @@ static int chooserHide(lua_State *L) {
 /// Returns:
 ///  * A boolean, true if the chooser is displayed on screen, false if not
 static int chooserIsVisible(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -123,6 +123,7 @@ static int chooserIsVisible(lua_State *L) {
 ///  * Each choice may also optionally contain the following keys:
 ///   * subText - A string or hs.styledtext object that will be shown underneath the main text of the choice
 ///   * image - An `hs.image` image object that will be displayed next to the choice
+///   * valid - A boolean that defaults to `true`, if set to `false` selecting the choice will invoke the `invalidCallback` method instead of dismissing the chooser
 ///  * Any other keys/values in each choice table will be retained by the chooser and returned to the completion callback when a choice is made. This is useful for storing UUIDs or other non-user-facing information, however, it is important to note that you should not store userdata objects in the table - it is run through internal conversion functions, so only basic Lua types should be stored.
 ///  * If a function is given, it will be called once, when the chooser window is displayed. The results are then cached until this method is called again, or `hs.chooser:refreshChoicesCallback()` is called.
 ///  * If you're using a hs.styledtext object for text or subText choices, make sure you specify a color, otherwise your text could appear transparent depending on the bgDark setting.
@@ -148,7 +149,7 @@ static int chooserIsVisible(lua_State *L) {
 static int chooserSetChoices(lua_State *L) {
     BOOL staticChoicesTypeCheckPass = NO;
 
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TTABLE | LS_TNIL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -196,6 +197,35 @@ static int chooserSetChoices(lua_State *L) {
     return 1;
 }
 
+/// hs.chooser:hideCallback([fn]) -> hs.chooser object
+/// Method
+/// Sets/clears a callback for when the chooser window is hidden
+///
+/// Parameters:
+///  * fn - An optional function that will be called when the chooser window is hidden. If this parameter is omitted, the existing callback will be removed.
+///
+/// Returns:
+///  * The hs.chooser object
+///
+/// Notes:
+///  * This callback is called *after* the chooser is hidden.
+///  * This callback is called *after* hs.chooser.globalCallback.
+static int chooserHideCallback(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION|LS_TOPTIONAL, LS_TBREAK];
+
+    HSChooser *chooser = [skin toNSObjectAtIndex:1];
+
+    chooser.hideCallbackRef = [skin luaUnref:refTable ref:chooser.hideCallbackRef];
+
+    if (lua_type(L, 2) == LUA_TFUNCTION) {
+        chooser.hideCallbackRef = [skin luaRef:refTable atIndex:2];
+    }
+
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
 /// hs.chooser:showCallback([fn]) -> hs.chooser object
 /// Method
 /// Sets/clears a callback for when the chooser window is shown
@@ -209,7 +239,7 @@ static int chooserSetChoices(lua_State *L) {
 /// Notes:
 ///  * This callback is called *after* the chooser is shown. To execute code just before it's shown (and/or after it's removed) see `hs.chooser.globalCallback`
 static int chooserShowCallback(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION|LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -237,7 +267,7 @@ static int chooserShowCallback(lua_State *L) {
 /// Notes:
 ///  * This method will do nothing if you have not set a function with `hs.chooser:choices()`
 static int chooserRefreshChoicesCallback(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -271,7 +301,7 @@ static int chooserRefreshChoicesCallback(lua_State *L) {
 /// Notes:
 ///  * You can provide an explicit nil or empty string to clear the current query string.
 static int chooserSetQuery(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -309,7 +339,7 @@ static int chooserSetQuery(lua_State *L) {
 /// Returns:
 ///  * The hs.chooser object, or the existing placeholder text
 static int chooserPlaceholder(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs: LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -340,7 +370,7 @@ static int chooserPlaceholder(lua_State *L) {
 ///  * The callback function should accept a single argument:
 ///   * A string containing the new search query
 static int chooserQueryCallback(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION|LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -369,7 +399,7 @@ static int chooserQueryCallback(lua_State *L) {
 ///   * The callback may accept one argument, the row the right click occurred in or 0 if there is currently no selectable row where the right click occurred. To determine the location of the mouse pointer at the right click, see `hs.mouse`.
 ///   * To display a context menu, see `hs.menubar`, specifically the `:popupMenu()` method
 static int chooserRightClickCallback(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION|LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -378,6 +408,35 @@ static int chooserRightClickCallback(lua_State *L) {
 
     if (lua_type(L, 2) == LUA_TFUNCTION) {
         chooser.rightClickCallbackRef = [skin luaRef:refTable atIndex:2];
+    }
+
+    lua_pushvalue(L, 1);
+    return 1;
+}
+
+/// hs.chooser:invalidCallback([fn]) -> hs.chooser object
+/// Method
+/// Sets/clears a callback for invalid choices
+///
+/// Parameters:
+///  * fn - An optional function that will be called whenever the user select an choice set as invalid. If this parameter is omitted, the existing callback will be removed.
+///
+/// Returns:
+///  * The `hs.chooser` object
+///
+/// Notes:
+///   * The callback may accept one argument, it will be a table containing whatever information you supplied for the item the user chose.
+///   * To display a context menu, see `hs.menubar`, specifically the `:popupMenu()` method
+static int chooserInvalidCallback(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION|LS_TOPTIONAL, LS_TBREAK];
+
+    HSChooser *chooser = [skin toNSObjectAtIndex:1];
+
+    chooser.invalidCallbackRef = [skin luaUnref:refTable ref:chooser.invalidCallbackRef];
+
+    if (lua_type(L, 2) == LUA_TFUNCTION) {
+        chooser.invalidCallbackRef = [skin luaRef:refTable atIndex:2];
     }
 
     lua_pushvalue(L, 1);
@@ -394,7 +453,7 @@ static int chooserRightClickCallback(lua_State *L) {
 /// Returns:
 ///  * None
 static int chooserDelete(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     // FIXME: Should we force the selfRefCount to 1 here, so the _gc call definitely deletes the ObjC object?
@@ -411,7 +470,7 @@ static int chooserDelete(lua_State *L) {
 /// Returns:
 ///  * The `hs.chooser` object or a color table
 static int chooserSetFgColor(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -450,7 +509,7 @@ static int chooserSetFgColor(lua_State *L) {
 /// Returns:
 ///  * The `hs.chooser` object or a color table
 static int chooserSetSubTextColor(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -492,7 +551,7 @@ static int chooserSetSubTextColor(lua_State *L) {
 /// Notes:
 ///  * The text colors will not automatically change when you toggle the darkness of the chooser window, you should also set appropriate colors with `hs.chooser:fgColor()` and `hs.chooser:subTextColor()`
 static int chooserSetBgDark(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNIL | LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -537,7 +596,7 @@ static int chooserSetBgDark(lua_State *L) {
 /// Notes:
 ///  * This should be used before a chooser has been displayed
 static int chooserSetSearchSubText(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -574,7 +633,7 @@ static int chooserSetSearchSubText(lua_State *L) {
 /// Notes:
 ///  * This should be used before a chooser has been displayed
 static int chooserSetWidth(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -608,7 +667,7 @@ static int chooserSetWidth(lua_State *L) {
 /// Returns:
 ///  * The `hs.chooser` object or a number
 static int chooserSetNumRows(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -642,7 +701,7 @@ static int chooserSetNumRows(lua_State *L) {
 /// Returns:
 ///  * If an argument is provided, returns the hs.chooser object; otherwise returns a number containing the row currently selected (i.e. the one highlighted in the UI)
 static int chooserSelectedRow(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -671,7 +730,7 @@ static int chooserSelectedRow(lua_State *L) {
 /// Returns:
 ///  * a table containing whatever information was supplied for the row currently selected or an empty table if no row is selected or the specified row does not exist.
 static int chooserSelectedRowContents(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK];
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
 
@@ -694,7 +753,7 @@ static int chooserSelectedRowContents(lua_State *L) {
 /// Returns:
 ///  * The `hs.chooser` object
 static int chooserSelect(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
@@ -718,7 +777,7 @@ static int chooserSelect(lua_State *L) {
 /// Returns:
 ///  * The `hs.chooser` object
 static int chooserCancel(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
 
@@ -743,7 +802,7 @@ static int pushHSChooser(lua_State *L, id obj) {
 }
 
 static id toHSChooserFromLua(lua_State *L, int idx) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     HSChooser *value ;
     if (luaL_testudata(L, idx, USERDATA_TAG)) {
         value = get_objectFromUserdata(__bridge HSChooser, L, idx, USERDATA_TAG) ;
@@ -757,7 +816,7 @@ static id toHSChooserFromLua(lua_State *L, int idx) {
 #pragma mark - Hammerspoon Infrastructure
 
 static int userdata_tostring(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
     [skin pushNSObject:[NSString stringWithFormat:@"%s: (%@)", USERDATA_TAG, chooser]];
     return 1;
@@ -767,7 +826,7 @@ static int userdata_eq(lua_State* L) {
     // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
     // so use luaL_testudata before the macro causes a lua error
     if (luaL_testudata(L, 1, USERDATA_TAG) && luaL_testudata(L, 2, USERDATA_TAG)) {
-        LuaSkin *skin = [LuaSkin shared] ;
+        LuaSkin *skin = [LuaSkin sharedWithState:L] ;
         HSChooser *obj1 = [skin luaObjectAtIndex:1 toClass:"HSChooser"] ;
         HSChooser *obj2 = [skin luaObjectAtIndex:2 toClass:"HSChooser"] ;
         lua_pushboolean(L, [obj1 isEqualTo:obj2]) ;
@@ -777,17 +836,19 @@ static int userdata_eq(lua_State* L) {
     return 1 ;
 }
 static int userdata_gc(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
     HSChooser *chooser = get_objectFromUserdata(__bridge_transfer HSChooser, L, 1, USERDATA_TAG);
     if (chooser) {
         chooser.selfRefCount--;
         if (chooser.selfRefCount == 0) {
+            chooser.hideCallbackRef = [skin luaUnref:refTable ref:chooser.hideCallbackRef];
             chooser.showCallbackRef = [skin luaUnref:refTable ref:chooser.showCallbackRef];
             chooser.choicesCallbackRef = [skin luaUnref:refTable ref:chooser.choicesCallbackRef];
             chooser.queryChangedCallbackRef = [skin luaUnref:refTable ref:chooser.queryChangedCallbackRef];
             chooser.completionCallbackRef = [skin luaUnref:refTable ref:chooser.completionCallbackRef];
             chooser.rightClickCallbackRef = [skin luaUnref:refTable ref:chooser.rightClickCallbackRef];
+            chooser.invalidCallbackRef = [skin luaUnref:refTable ref:chooser.invalidCallbackRef];
             chooser.isObservingThemeChanges = NO;  // Stop observing for interface theme changes.
 
             NSWindow *theWindow = chooser.window ;
@@ -818,12 +879,14 @@ static const luaL_Reg userdataLib[] = {
     {"hide", chooserHide},
     {"isVisible", chooserIsVisible},
     {"choices", chooserSetChoices},
+    {"hideCallback", chooserHideCallback},
     {"showCallback", chooserShowCallback},
     {"queryChangedCallback", chooserQueryCallback},
     {"query", chooserSetQuery},
     {"delete", chooserDelete},
     {"refreshChoicesCallback", chooserRefreshChoicesCallback},
     {"rightClickCallback", chooserRightClickCallback},
+    {"invalidCallback", chooserInvalidCallback},
     {"selectedRow", chooserSelectedRow},
     {"selectedRowContents", chooserSelectedRowContents},
     {"select", chooserSelect},
@@ -842,8 +905,8 @@ static const luaL_Reg userdataLib[] = {
     {NULL, NULL}
 };
 
-int luaopen_hs_chooser_internal(__unused lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+int luaopen_hs_chooser_internal(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     refTable = [skin registerLibraryWithObject:USERDATA_TAG
                                      functions:chooserLib
                                  metaFunctions:nil

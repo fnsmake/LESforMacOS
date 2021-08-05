@@ -143,7 +143,7 @@ static int pushTestUserData(lua_State *L, id object) {
 
 @interface LuaSkinTests : XCTestCase
 @property LuaSkin *skin;
-@property int refTable;
+@property LSRefTable refTable;
 @property int evalfn;
 @end
 
@@ -153,7 +153,7 @@ static int pushTestUserData(lua_State *L, id object) {
 
 - (void)setUp {
     [super setUp];
-    self.skin = [[LuaSkin alloc] init];
+    self.skin = [LuaSkin sharedWithState:NULL];
     libraryGCCalled = NO;
     libraryObjectGCCalled = NO;
 
@@ -202,7 +202,7 @@ static int pushTestUserData(lua_State *L, id object) {
 }
 
 - (void)tearDown {
-    [self.skin destroyLuaState];
+    [self.skin resetLuaState];
     [super tearDown];
 }
 
@@ -286,7 +286,7 @@ static int pushTestUserData(lua_State *L, id object) {
 }
 
 - (void)testSingletonality {
-    XCTAssertEqual([LuaSkin shared], [LuaSkin shared]);
+    XCTAssertEqual([LuaSkin sharedWithState:NULL], [LuaSkin sharedWithState:NULL]);
 }
 
 - (void)testBackgroundThreadCatcher {
@@ -294,7 +294,7 @@ static int pushTestUserData(lua_State *L, id object) {
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
         @try {
-            LuaSkin *bg_skin = [LuaSkin shared];
+            LuaSkin *bg_skin = [LuaSkin sharedWithState:NULL];
             NSLog(@"Created skin: %@", bg_skin); // This should never be executed
         }
         @catch (NSException *exception) {
@@ -374,7 +374,7 @@ static int pushTestUserData(lua_State *L, id object) {
 }
 
 - (void)testLibrary {
-    [self.skin registerLibrary:functions metaFunctions:metaFunctions];
+    [self.skin registerLibrary:"testLibrary" functions:functions metaFunctions:metaFunctions];
 
     // Normally we'd be returning to a luaopen_ function after registerLibrary, and thus the library would be inserted into the right namespace. Since we're not doing that here, we'll just go ahead and register it as a global, using the library name
     lua_setglobal(self.skin.L, libraryTestName);
@@ -956,7 +956,7 @@ static int pushTestUserData(lua_State *L, id object) {
     XCTAssertEqual(95.7, holder.d);
     XCTAssertEqual(-101, holder.i);
     XCTAssertEqual(101, holder.ui);
-    
+
 }
 
 - (void)testIsValidUTF8AtIndex {
@@ -991,7 +991,7 @@ static int pushTestUserData(lua_State *L, id object) {
     XCTestExpectation *expectation = nil;
 
     dispatch_block_t logBlock = ^{
-        self.skin = [LuaSkin shared];
+        self.skin = [LuaSkin sharedWithState:NULL];
         LSTestDelegate *testDelegate = [[LSTestDelegate alloc] init];
         self.skin.delegate = testDelegate;
 
@@ -1101,7 +1101,7 @@ id luaObjectHelperTestFunction(lua_State *L, int idx) {
 }
 
 - (void)testObjCExceptionHandler {
-    [self.skin registerLibrary:functions metaFunctions:metaFunctions];
+    [self.skin registerLibrary:"LuaSkinTests" functions:functions metaFunctions:metaFunctions];
 
     // Normally we'd be returning to a luaopen_ function after registerLibrary, and thus the library would be inserted into the right namespace. Since we're not doing that here, we'll just go ahead and register it as a global, using the library name
     lua_setglobal(self.skin.L, libraryTestName);

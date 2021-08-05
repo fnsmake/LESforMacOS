@@ -3,18 +3,8 @@
 @import Carbon;
 @import LuaSkin;
 @import WebKit;
-#import "PocketSocket/PSWebSocket.h"
 
-// Websocket userdata struct
-typedef struct _webSocketUserData {
-    int selfRef;
-    void *ws;
-} webSocketUserData;
-
-#define getWsUserData(L, idx) (__bridge HSWebSocketDelegate *)((webSocketUserData *)lua_touserdata(L, idx))->ws;
-static const char *WS_USERDATA_TAG = "hs.http.websocket";
-
-static int refTable;
+static LSRefTable refTable;
 static NSMutableArray* delegates;
 
 // Convert a response body to data we can send to Lua
@@ -39,12 +29,6 @@ static id responseBodyToId(NSHTTPURLResponse *httpResponse, NSData *bodyData) {
 @property(nonatomic, retain) NSURLConnection* connection;
 @end
 
-// Definition of websocket delegate object
-@interface HSWebSocketDelegate: NSObject<PSWebSocketDelegate>
-@property int fn;
-@property (strong) PSWebSocket *webSocket;
-@end
-
 // Store a created delegate so we can cancel it on garbage collection
 static void store_delegate(connectionDelegate* delegate) {
     [delegates addObject:delegate];
@@ -53,8 +37,8 @@ static void store_delegate(connectionDelegate* delegate) {
 // Remove a delegate either if loading has finished or if it needs to be
 // garbage collected. This unreferences the lua callback and sets the callback
 // reference in the delegate to LUA_NOREF.
-static void remove_delegate(__unused lua_State* L, connectionDelegate* delegate) {
-    LuaSkin *skin = [LuaSkin shared];
+static void remove_delegate(lua_State* L, connectionDelegate* delegate) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     [delegate.connection cancel];
     delegate.fn = [skin luaUnref:refTable ref:delegate.fn];
@@ -83,7 +67,7 @@ static void remove_delegate(__unused lua_State* L, connectionDelegate* delegate)
     if (self.fn == LUA_NOREF) {
         return;
     }
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
     lua_State *L = skin.L;
     _lua_stackguard_entry(L);
 
@@ -101,7 +85,7 @@ static void remove_delegate(__unused lua_State* L, connectionDelegate* delegate)
     if (self.fn == LUA_NOREF){
         return;
     }
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
     _lua_stackguard_entry(skin.L);
 
     NSString* errorMessage = [NSString stringWithFormat:@"Connection failed: %@ - %@", [error localizedDescription], [[error userInfo] objectForKey:NSURLErrorFailingURLStringErrorKey]];
@@ -115,55 +99,13 @@ static void remove_delegate(__unused lua_State* L, connectionDelegate* delegate)
 
 @end
 
-// Implementation of the websocket client delegate
-@implementation HSWebSocketDelegate
-- (instancetype)initWithURL:(NSURL *)URL {
-    if((self = [super init])) {
-        NSURLRequest *request = [NSURLRequest requestWithURL:URL];
-        _webSocket = [PSWebSocket clientSocketWithRequest:request];
-        _webSocket.delegate = self;
-        _webSocket.delegateQueue = dispatch_queue_create(nil, nil);
-    }
-    return self;
-}
-
-- (void)webSocketDidOpen:(PSWebSocket *)webSocket {
-    [LuaSkin logInfo:@"Client websocket opened"];
-}
-
-- (void)webSocket:(PSWebSocket *)webSocket didReceiveMessage:(id)message {
-    if (self.fn == LUA_NOREF) {
-        return;
-    }
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        LuaSkin *skin = [LuaSkin shared];
-        _lua_stackguard_entry(skin.L);
-
-        [skin pushLuaRef:refTable ref:self.fn];
-        [skin pushNSObject:message];
-
-        [skin protectedCallAndError:@"hs.http.websocket callback" nargs:1 nresults:0];
-        _lua_stackguard_exit(skin.L);
-    });
-}
-
-- (void)webSocket:(PSWebSocket *)webSocket didFailWithError:(NSError *)error {
-    [LuaSkin logInfo:[NSString stringWithFormat:@"hs.http.webSocket: didFail: %@", error]];
-}
-
-- (void)webSocket:(PSWebSocket *)webSocket didCloseWithCode:(NSInteger)code reason:(NSString *)reason wasClean:(BOOL)wasClean {
-    [LuaSkin logInfo:[NSString stringWithFormat:@"hs.http.webSocket: didClose: %@", reason]];
-}
-@end
-
 // If the user specified a request body, get it from stack,
 // add it to the request and add the content length header field
 static void getBodyFromStack(lua_State* L, int index, NSMutableURLRequest* request){
     if (!lua_isnoneornil(L, index)) {
         NSData *postData ;
         if (lua_type(L, index) == LUA_TSTRING) {
-            postData = [[LuaSkin shared] toNSObjectAtIndex:index withOptions:LS_NSLuaStringAsDataOnly] ;
+            postData = [[LuaSkin sharedWithState:L] toNSObjectAtIndex:index withOptions:LS_NSLuaStringAsDataOnly] ;
         } else {
             NSString* body = [NSString stringWithCString:lua_tostring(L, index) encoding:NSASCIIStringEncoding];
             postData = [body dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:YES];
@@ -173,17 +115,17 @@ static void getBodyFromStack(lua_State* L, int index, NSMutableURLRequest* reque
             [request setValue:postLength forHTTPHeaderField:@"Content-Length"];
             [request setHTTPBody:postData];
         } else {
-            [LuaSkin logError:[NSString stringWithFormat:@"%s - getBodyFromStack - non-nil entry at stack index %u but unable to convert to NSData", WS_USERDATA_TAG, index]] ;
+            [LuaSkin logError:[NSString stringWithFormat:@"hs.http - getBodyFromStack - non-nil entry at stack index %u but unable to convert to NSData", index]] ;
         }
     }
 }
 
 // Gets all information for the request from the stack and creates a request
-static NSMutableURLRequest* getRequestFromStack(__unused lua_State* L, NSString* cachePolicy){
-    LuaSkin *skin = [LuaSkin shared];
+static NSMutableURLRequest* getRequestFromStack(lua_State* L, NSString* cachePolicy){
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     NSString* url = [skin toNSObjectAtIndex:1];
     NSString* method = [skin toNSObjectAtIndex:2];
-        
+
     NSUInteger selectedCachePolicy;
     if ([cachePolicy isEqualToString:@"protocolCachePolicy"]) {
         selectedCachePolicy = NSURLRequestUseProtocolCachePolicy;
@@ -247,11 +189,14 @@ static void extractHeadersFromStack(lua_State* L, int index, NSMutableURLRequest
 ///  * If authentication is required in order to download the request, the required credentials must be specified as part of the URL (e.g. "http://user:password@host.com/"). If authentication fails, or credentials are missing, the connection will attempt to continue without credentials.
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
 static int http_doAsyncRequest(lua_State* L){
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TSTRING, LS_TSTRING, LS_TSTRING|LS_TNIL, LS_TTABLE|LS_TNIL, LS_TFUNCTION, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK];
 
-    NSString* cachePolicy = [skin toNSObjectAtIndex:6];
-    
+    NSString* cachePolicy = nil;
+    if (lua_type(L, 6) == LUA_TSTRING) {
+        cachePolicy = [skin toNSObjectAtIndex:6];
+    }
+
     NSMutableURLRequest* request = getRequestFromStack(L, cachePolicy);
     getBodyFromStack(L, 3, request);
     extractHeadersFromStack(L, 4, request);
@@ -299,11 +244,11 @@ static int http_doAsyncRequest(lua_State* L){
 ///  * If you attempt to connect to a local Hammerspoon server created with `hs.httpserver`, then Hammerspoon will block until the connection times out (60 seconds), return a failed result due to the timeout, and then the `hs.httpserver` callback function will be invoked (so any side effects of the function will occur, but it's results will be lost).  Use [hs.http.doAsyncRequest](#doAsyncRequest) to avoid this.
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
 static int http_doRequest(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TSTRING, LS_TSTRING, LS_TSTRING|LS_TNIL|LS_TOPTIONAL, LS_TTABLE|LS_TNIL|LS_TOPTIONAL, LS_TSTRING|LS_TOPTIONAL, LS_TBREAK];
 
     NSString* cachePolicy = [skin toNSObjectAtIndex:5];
-    
+
     NSMutableURLRequest *request = getRequestFromStack(L, cachePolicy);
     getBodyFromStack(L, 3, request);
     extractHeadersFromStack(L, 4, request);
@@ -329,15 +274,16 @@ static int http_doRequest(lua_State* L) {
 
 // NOTE: this function is wrapped in init.lua
 static int http_encodeForQuery(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     luaL_checkstring(L, 1) ;
-    NSString *value = [[LuaSkin shared] toNSObjectAtIndex:1] ;
+    NSString *value = [skin toNSObjectAtIndex:1] ;
 
     if ([value respondsToSelector:@selector(stringByAddingPercentEncodingWithAllowedCharacters:)]) {
-        [[LuaSkin shared] pushNSObject:[value stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]]] ;
+        [skin pushNSObject:[value stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]]] ;
     } else {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        [[LuaSkin shared] pushNSObject:[value stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]] ;
+        [skin pushNSObject:[value stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]] ;
 #pragma clang diagnostic pop
     }
     return 1 ;
@@ -421,6 +367,7 @@ static int http_encodeForQuery(lua_State *L) {
 ///    * These limitations may change in a future update if the need for a more fully compliant URL treatment is determined to be necessary.
 #define get_objectFromUserdata(objType, L, idx) (objType*)*((void**)lua_touserdata(L, idx))
 static int http_urlParts(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     NSURL *theURL ;
     if (lua_type(L, 1) == LUA_TUSERDATA) {
 // this only works if the userdata is an NSWindow or subclass with a contentView that is a WKWebView or subclass
@@ -430,30 +377,30 @@ static int http_urlParts(lua_State *L) {
         theURL               = [theView URL] ;
     } else {
         luaL_checkstring(L, 1) ;
-        theURL = [NSURL URLWithString:(NSString *)[[LuaSkin shared] toNSObjectAtIndex:1]] ;
+        theURL = [NSURL URLWithString:(NSString *)[skin toNSObjectAtIndex:1]] ;
     }
 
     lua_newtable(L) ;
-      [[LuaSkin shared] pushNSObject:[theURL absoluteString]] ;     lua_setfield(L, -2, "absoluteString") ;
-      [[LuaSkin shared] pushNSObject:[theURL absoluteURL]] ;        lua_setfield(L, -2, "absoluteURL") ;
-      [[LuaSkin shared] pushNSObject:[theURL baseURL]] ;            lua_setfield(L, -2, "baseURL") ;
+      [skin pushNSObject:[theURL absoluteString]] ;     lua_setfield(L, -2, "absoluteString") ;
+      [skin pushNSObject:[theURL absoluteURL]] ;        lua_setfield(L, -2, "absoluteURL") ;
+      [skin pushNSObject:[theURL baseURL]] ;            lua_setfield(L, -2, "baseURL") ;
       lua_pushstring(L, [theURL fileSystemRepresentation]) ;        lua_setfield(L, -2, "fileSystemRepresentation") ;
-      [[LuaSkin shared] pushNSObject:[theURL fragment]] ;           lua_setfield(L, -2, "fragment") ;
-      [[LuaSkin shared] pushNSObject:[theURL host]] ;               lua_setfield(L, -2, "host") ;
-      [[LuaSkin shared] pushNSObject:[theURL lastPathComponent]] ;  lua_setfield(L, -2, "lastPathComponent") ;
-      [[LuaSkin shared] pushNSObject:[theURL parameterString]] ;    lua_setfield(L, -2, "parameterString") ;
-      [[LuaSkin shared] pushNSObject:[theURL password]] ;           lua_setfield(L, -2, "password") ;
-      [[LuaSkin shared] pushNSObject:[theURL path]] ;               lua_setfield(L, -2, "path") ;
-      [[LuaSkin shared] pushNSObject:[theURL pathComponents]] ;     lua_setfield(L, -2, "pathComponents") ;
-      [[LuaSkin shared] pushNSObject:[theURL pathExtension]] ;      lua_setfield(L, -2, "pathExtension") ;
-      [[LuaSkin shared] pushNSObject:[theURL port]] ;               lua_setfield(L, -2, "port") ;
-      [[LuaSkin shared] pushNSObject:[theURL query]] ;              lua_setfield(L, -2, "query") ;
-      [[LuaSkin shared] pushNSObject:[theURL relativePath]] ;       lua_setfield(L, -2, "relativePath") ;
-      [[LuaSkin shared] pushNSObject:[theURL relativeString]] ;     lua_setfield(L, -2, "relativeString") ;
-      [[LuaSkin shared] pushNSObject:[theURL resourceSpecifier]] ;  lua_setfield(L, -2, "resourceSpecifier") ;
-      [[LuaSkin shared] pushNSObject:[theURL scheme]] ;             lua_setfield(L, -2, "scheme") ;
-      [[LuaSkin shared] pushNSObject:[theURL standardizedURL]] ;    lua_setfield(L, -2, "standardizedURL") ;
-      [[LuaSkin shared] pushNSObject:[theURL user]] ;               lua_setfield(L, -2, "user") ;
+      [skin pushNSObject:[theURL fragment]] ;           lua_setfield(L, -2, "fragment") ;
+      [skin pushNSObject:[theURL host]] ;               lua_setfield(L, -2, "host") ;
+      [skin pushNSObject:[theURL lastPathComponent]] ;  lua_setfield(L, -2, "lastPathComponent") ;
+      [skin pushNSObject:[theURL parameterString]] ;    lua_setfield(L, -2, "parameterString") ;
+      [skin pushNSObject:[theURL password]] ;           lua_setfield(L, -2, "password") ;
+      [skin pushNSObject:[theURL path]] ;               lua_setfield(L, -2, "path") ;
+      [skin pushNSObject:[theURL pathComponents]] ;     lua_setfield(L, -2, "pathComponents") ;
+      [skin pushNSObject:[theURL pathExtension]] ;      lua_setfield(L, -2, "pathExtension") ;
+      [skin pushNSObject:[theURL port]] ;               lua_setfield(L, -2, "port") ;
+      [skin pushNSObject:[theURL query]] ;              lua_setfield(L, -2, "query") ;
+      [skin pushNSObject:[theURL relativePath]] ;       lua_setfield(L, -2, "relativePath") ;
+      [skin pushNSObject:[theURL relativeString]] ;     lua_setfield(L, -2, "relativeString") ;
+      [skin pushNSObject:[theURL resourceSpecifier]] ;  lua_setfield(L, -2, "resourceSpecifier") ;
+      [skin pushNSObject:[theURL scheme]] ;             lua_setfield(L, -2, "scheme") ;
+      [skin pushNSObject:[theURL standardizedURL]] ;    lua_setfield(L, -2, "standardizedURL") ;
+      [skin pushNSObject:[theURL user]] ;               lua_setfield(L, -2, "user") ;
       lua_pushboolean(L, [theURL isFileURL]) ;                      lua_setfield(L, -2, "isFileURL") ;
 
       if ([theURL query]) {
@@ -468,9 +415,9 @@ static int http_urlParts(lua_State *L) {
           for (NSURLQueryItem *item in [components queryItems]) {
               lua_newtable(L) ;
               if ([item value]) {
-                  [[LuaSkin shared] pushNSObject:[item value]] ; lua_setfield(L, -2, [[item name] UTF8String]) ;
+                  [skin pushNSObject:[item value]] ; lua_setfield(L, -2, [[item name] UTF8String]) ;
               } else {
-                  [[LuaSkin shared] pushNSObject:[item name]] ; lua_rawseti(L, -2, 1) ;
+                  [skin pushNSObject:[item name]] ; lua_rawseti(L, -2, 1) ;
               }
               lua_rawseti(L, -2, luaL_len(L, -2) + 1) ;
           }
@@ -484,7 +431,7 @@ static int http_urlParts(lua_State *L) {
 // I do hope to use them here when I get a chance, so as to provide a more consistent user experience.
 
 static int NSURLResponse_toLua(lua_State *L, id obj) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     NSURLResponse *theResponse = obj ;
 
     lua_newtable(L) ;
@@ -506,7 +453,7 @@ static int NSURLResponse_toLua(lua_State *L, id obj) {
 }
 
 static int NSURLRequest_toLua(lua_State *L, id obj) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     NSURLRequest *request = obj ;
 
     lua_newtable(L) ;
@@ -548,7 +495,7 @@ static int NSURLRequest_toLua(lua_State *L, id obj) {
 }
 
 static id table_toNSURLRequest(lua_State* L, int idx) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     NSMutableURLRequest *request = [[NSMutableURLRequest alloc] init] ;
 
     lua_pushvalue(L, idx) ;
@@ -656,50 +603,6 @@ static id table_toNSURLRequest(lua_State* L, int idx) {
     return request ;
 }
 
-static int http_ws_open(lua_State* L){
-    LuaSkin *skin = [LuaSkin shared];
-    [skin checkArgs:LS_TSTRING, LS_TFUNCTION, LS_TBREAK];
-
-    NSString *url = [skin toNSObjectAtIndex:1];
-    HSWebSocketDelegate* ws = [[HSWebSocketDelegate alloc] initWithURL:[NSURL URLWithString:url]];
-
-    lua_pushvalue(L, 2);
-    ws.fn = [skin luaRef:refTable];
-
-    [ws.webSocket open];
-
-    webSocketUserData *userData = lua_newuserdata(L, sizeof(webSocketUserData));
-    memset(userData, 0, sizeof(webSocketUserData));
-    userData->ws = (__bridge_retained void*)ws;
-    luaL_getmetatable(L, WS_USERDATA_TAG);
-    lua_setmetatable(L, -2);
-
-    return 1;
-}
-
-static int http_ws_send(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
-    [skin checkArgs:LS_TUSERDATA, WS_USERDATA_TAG, LS_TSTRING, LS_TBREAK];
-    HSWebSocketDelegate* ws = getWsUserData(L, 1);
-
-    NSString *message = [skin toNSObjectAtIndex:2];
-    [ws.webSocket send:message];
-
-    lua_pushvalue(L, 1);
-    return 1;
-}
-
-static int http_ws_close(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
-    [skin checkArgs:LS_TUSERDATA, WS_USERDATA_TAG, LS_TBREAK];
-    HSWebSocketDelegate* ws = getWsUserData(L, 1);
-
-    [ws.webSocket close];
-
-    lua_pushvalue(L, 1);
-    return 1;
-}
-
 static int http_gc(lua_State* L){
     NSMutableArray* delegatesCopy = [[NSMutableArray alloc] init];
     [delegatesCopy addObjectsFromArray:delegates];
@@ -711,37 +614,11 @@ static int http_gc(lua_State* L){
     return 0;
 }
 
-static int http_ws_gc(lua_State* L){
-    webSocketUserData *userData = lua_touserdata(L, 1);
-    HSWebSocketDelegate* ws = (__bridge_transfer HSWebSocketDelegate *)userData->ws;
-    userData->ws = nil;
-
-    [ws.webSocket close];
-    ws.webSocket.delegate = nil;
-    ws.webSocket = nil;
-    ws.fn = [[LuaSkin shared] luaUnref:refTable ref:ws.fn];
-    ws = nil;
-
-    return 0;
-}
-
-static int http_ws_tostring(lua_State* L) {
-    HSWebSocketDelegate* ws = getWsUserData(L, 1);
-    NSString *host = @"disconnected";
-    if (ws.webSocket.readyState==1) {
-        host = (__bridge_transfer NSString *)[ws.webSocket copyStreamPropertyForKey:@"kCFStreamPropertySocketRemoteHostName"];
-    }
-
-    lua_pushstring(L, [[NSString stringWithFormat:@"%s: %@ (%p)", WS_USERDATA_TAG, host, lua_topointer(L, 1)] UTF8String]);
-    return 1;
-}
-
 static const luaL_Reg httplib[] = {
     {"doRequest",       http_doRequest},
     {"doAsyncRequest",  http_doAsyncRequest},
     {"urlParts",        http_urlParts},
     {"encodeForQuery",  http_encodeForQuery},
-    {"websocket",       http_ws_open},
 
     {NULL, NULL} // This must end with an empty struct
 };
@@ -752,21 +629,11 @@ static const luaL_Reg metalib[] = {
     {NULL, NULL} // This must end with an empty struct
 };
 
-static const luaL_Reg wsMetalib[] = {
-    {"send",        http_ws_send},
-    {"close",       http_ws_close},
-    {"__tostring",  http_ws_tostring},
-    {"__gc",        http_ws_gc},
-
-    {NULL, NULL} // This must end with an empty struct
-};
-
-int luaopen_hs_http_internal(lua_State* L __unused) {
-    LuaSkin *skin = [LuaSkin shared];
+int luaopen_hs_http_internal(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     delegates = [[NSMutableArray alloc] init];
-    refTable = [skin registerLibrary:httplib metaFunctions:metalib];
-    [skin registerObject:WS_USERDATA_TAG objectFunctions:wsMetalib];
+    refTable = [skin registerLibrary:"hs.http" functions:httplib metaFunctions:metalib];
 
     [skin registerPushNSHelper:NSURLRequest_toLua      forClass:"NSURLRequest"] ;
     [skin registerPushNSHelper:NSURLResponse_toLua     forClass:"NSURLResponse"] ;

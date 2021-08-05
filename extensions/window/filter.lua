@@ -73,9 +73,12 @@ local next,tsort,setmetatable,pcall = next,table.sort,setmetatable,pcall
 local timer,geometry,screen = require'hs.timer',require'hs.geometry',require'hs.screen'
 local application,window = require'hs.application',hs.window
 local appwatcher,uiwatcher = application.watcher,require'hs.uielement'.watcher
+local axuielement, fnutils = require("hs.axuielement"), require("hs.fnutils")
 local logger = require'hs.logger'
 local log = logger.new('wfilter')
 local DISTANT_FUTURE=315360000 -- 10 years (roughly)
+
+local windowMT = hs.getObjectMetatable("hs.window")
 
 local windowfilter={} -- module
 local WF={} -- class
@@ -126,7 +129,7 @@ do
     'com.apple.security.pboxd', 'PowerChime',
     'SystemUIServer', 'Dock', 'com.apple.dock.extra', 'storeuid',
     'Folder Actions Dispatcher', 'Keychain Circle Notification', 'Wi-Fi',
-    'Image Capture Extension', 'iCloud Photos', 'System Events',
+    'Image Capture Extension', 'iCloud Photos', 'System Events',
     'Speech Synthesis Server', 'Dropbox Finder Integration', 'LaterAgent',
     'Karabiner_AXNotifier', 'Photos Agent', 'EscrowSecurityAlert',
     'Google Chrome Helper', 'com.apple.MailServiceAgent', 'Safari Web Content', 'Mail Web Content',
@@ -356,7 +359,7 @@ end
 --- Set the default filtering rules to be used for apps without app-specific rules
 ---
 --- Parameters:
----   * filter - see `hs.window.filter:setAppFilter`
+---  * filter - see `hs.window.filter:setAppFilter`
 ---
 --- Returns:
 ---  * the `hs.window.filter` object for method chaining
@@ -368,7 +371,7 @@ end
 --- Set overriding filtering rules that will be applied for all apps before any app-specific rules
 ---
 --- Parameters:
----   * filter - see `hs.window.filter:setAppFilter`
+---  * filter - see `hs.window.filter:setAppFilter`
 ---
 --- Returns:
 ---  * the `hs.window.filter` object for method chaining
@@ -1303,7 +1306,7 @@ function App:focusChanged(id,win)
     self.focused=nil
   else
     if not self.windows[id] then
-      log.wf('%s (%d) is not registered yet',self.name,id)
+      log.df('%s (%d) is not registered yet',self.name,id)
       appWindowEvent(win,uiwatcher.windowCreated,nil,self.name)
     end
     if self==active then
@@ -1341,14 +1344,8 @@ function App:destroyed()
   apps[self.name]=nil
 end
 
-local function windowEvent(win,event,_,appname)
-  local id=win and win.id and win:id()
+local function windowEvent(event,appname,id)
   local app=apps[appname]
-  if not id and app then
-    for _,v in pairs(app.windows) do
-      if v.window==win then id=v.id break end
-    end
-  end
   log.vf('%s (%s) <= %s (window event)',appname,id or '?',event)
   if not id then return log.df('%s: %s cannot be processed',appname,event) end
   if not app then return log.df('app %s is not registered!',appname) end
@@ -1386,14 +1383,17 @@ appWindowEvent=function(win,event,_,appname,retry)
       return
     end
     if apps[appname].windows[id] then return log.df('%s (%d) already registered',appname,id) end
-    local watcher=win:newWatcher(windowEvent,appname)
-    if not watcher._element.pid then
-      log.wf('%s: %s has no watcher pid',appname,role or (win.role and win:role()))
-      if retry>MAX_RETRIES then log.df('%s: %s has no watcher pid',appname,win.subrole and win:subrole() or (win.role and win:role()) or 'window')
-      else
-        windowWatcherDelayed[win]=timer.doAfter(retry*RETRY_DELAY,function()appWindowEvent(win,event,_,appname,retry)end) end
-      return
-    end
+    local watcher=win:newWatcher(function(_,watcherEvent)
+      windowEvent(watcherEvent,appname,id)
+    end, appname)
+-- pretty sure this is a NOP now since pid capture is no longer delayed
+--     if not watcher:pid() then
+--       log.wf('%s: %s has no watcher pid',appname,role or (win.role and win:role()))
+--       if retry>MAX_RETRIES then log.df('%s: %s has no watcher pid',appname,win.subrole and win:subrole() or (win.role and win:role()) or 'window')
+--       else
+--         windowWatcherDelayed[win]=timer.doAfter(retry*RETRY_DELAY,function()appWindowEvent(win,event,_,appname,retry)end) end
+--       return
+--     end
     Window.created(win,id,apps[appname],watcher)
     watcher:start({uiwatcher.elementDestroyed,uiwatcher.windowMoved,uiwatcher.windowResized
       ,uiwatcher.windowMinimized,uiwatcher.windowUnminimized,uiwatcher.titleChanged})
@@ -1404,41 +1404,27 @@ appWindowEvent=function(win,event,_,appname,retry)
   end
 end
 
---[[
-local function startAppWatcher(app,appname)
-  if not app or not appname then log.e('Called startAppWatcher with no app') return end
-  if apps[appname] then log.df('App %s already registered',appname) return end
-  if app:kind()<0 or not windowfilter.isGuiApp(appname) then log.df('App %s has no GUI',appname) return end
-  local watcher = app:newWatcher(appWindowEvent,appname)
-  watcher:start({uiwatcher.windowCreated,uiwatcher.focusedWindowChanged})
-  App.new(app,appname,watcher)
-  if not watcher._element.pid then
-    log.wf('No accessibility access to app %s (no watcher pid)',(appname or '[???]'))
-  end
-end
---]]
-
--- old workaround for the 'missing pid' bug
--- reinstated because occasionally apps take a while to be watchable after launching
-local function startAppWatcher(app,appname,retry,nologging)
+local function startAppWatcher(app,appname,retry,nologging,force)
   if not app or not appname then log.e('called startAppWatcher with no app') return end
   if apps[appname] then return not nologging and log.df('app %s already registered',appname) end
   if app:kind()<0 or not windowfilter.isGuiApp(appname) then log.df('app %s has no GUI',appname) return end
+  if not fnutils.contains(axuielement.applicationElement(app):attributeNames() or {}, "AXFocusedWindow") then
+      log.df('app %s has no AXFocusedWindow element',appname)
+      return
+  end
   retry=(retry or 0)+1
-  if retry>1 and not pendingApps[appname] then return end --given up before anything could even happen
 
-  local watcher = app:newWatcher(appWindowEvent,appname)
-  if watcher._element.pid then
+  if app:focusedWindow() or force then
     pendingApps[appname]=nil --done
+    local watcher = app:newWatcher(appWindowEvent,appname)
     watcher:start({uiwatcher.windowCreated,uiwatcher.focusedWindowChanged})
     App.new(app,appname,watcher)
   else
-    if retry>5 then
-      pendingApps[appname]=nil --give up
-      return log[nologging and 'df' or 'wf']('No accessibility access to app %s (no watcher pid)',appname)
-    end
-    timer.doAfter(RETRY_DELAY*MAX_RETRIES,function()startAppWatcher(app,appname,retry,nologging)end)
-    pendingApps[appname]=true
+    -- apps that start with an open window will often fail to be detected by the watcher if we
+    -- start it too early, so we try `app:focusedWindow()` MAX_RETRIES times before giving up
+    pendingApps[appname] = timer.doAfter(retry*RETRY_DELAY,function()
+        startAppWatcher(app,appname,retry,nologging, retry > MAX_RETRIES)
+    end)
   end
 end
 
@@ -1553,12 +1539,15 @@ local function startGlobalWatcher()
     preexistingWindowCreated[id]=time+id-999999
   end
   global.watcher = appwatcher.new(appEvent)
+  global.inStartGlobalWatcher = true
   local runningApps = application.runningApplications()
   log.f('registering %d running apps',#runningApps)
   for _,app in ipairs(runningApps) do
     startAppWatcher(app,app:name())
   end
   global.watcher:start()
+  global.inStartGlobalWatcher = nil
+
 end
 
 local function stopGlobalWatcher()
@@ -1786,7 +1775,7 @@ end
 --- Sets the sort order for this windowfilter's `:getWindows()` method
 ---
 --- Parameters:
----   * sortOrder - one of the `hs.window.filter.sortBy...` constants
+---  * sortOrder - one of the `hs.window.filter.sortBy...` constants
 ---
 --- Returns:
 ---  * the `hs.window.filter` object for method chaining
@@ -2069,7 +2058,8 @@ function WF:delete()
   self.log.i(self,'instance deleted')
   activeInstances[self]=nil spacesInstances[self]=nil applicationActiveInstances[self]=nil
   self.events={} self.filters={} self.windows={}
-  setmetatable(self,nil) stopGlobalWatcher()
+  setmetatable(self,nil)
+  if not global.inStartGlobalWatcher then stopGlobalWatcher() end
 end
 
 
@@ -2303,10 +2293,10 @@ end
 
 for _,dir in ipairs{'East','North','West','South'}do
   WF['windowsTo'..dir]=function(self,win,...)
-    return window['windowsTo'..dir](win,self:getWindows(),...)
+    return windowMT['windowsTo'..dir](win,self:getWindows(),...)
   end
   WF['focusWindow'..dir]=function(self,win,...)
-    if window['focusWindow'..dir](win,self:getWindows(),...) then self.log.i('focused window '..dir:lower()) end
+    if windowMT['focusWindow'..dir](win,self:getWindows(),...) then self.log.i('focused window '..dir:lower()) end
   end
   windowfilter['focus'..dir]=function()local d=makeDefaultCurrentSpace():keepActive()d['focusWindow'..dir](d,nil,nil,true)end
 end

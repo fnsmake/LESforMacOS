@@ -64,7 +64,7 @@ static int _push_dict_key_value(lua_State* L, NSDictionary* dict, NSString* key)
 }
 
 // Gets battery info from IOPM API.
-NSDictionary* get_iopm_battery_info() {
+NSDictionary* get_iopm_battery_info(void) {
     mach_port_t masterPort;
     CFArrayRef batteryInfo;
 
@@ -80,7 +80,7 @@ NSDictionary* get_iopm_battery_info() {
 }
 
 // Get battery info from IOPS API.
-NSDictionary* get_iops_battery_info() {
+NSDictionary* get_iops_battery_info(void) {
     CFTypeRef info = IOPSCopyPowerSourcesInfo();
 
     if (info == NULL)
@@ -108,7 +108,7 @@ NSDictionary* get_iops_battery_info() {
 }
 
 // Get battery info from IOPMPS Apple Smart Battery API.
-NSDictionary* get_iopmps_battery_info() {
+NSDictionary* get_iopmps_battery_info(void) {
     io_registry_entry_t entry = 0;
     entry = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceNameMatching("AppleSmartBattery"));
     if (entry == IO_OBJECT_NULL)
@@ -429,7 +429,7 @@ static int battery_psuSerial(lua_State* L) {
 #define kIOPSPowerAdapterSerialStringKey    "SerialString"
 #endif
 static int battery_psuSerialString(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     NSString *serial = @"";
@@ -457,7 +457,7 @@ static int battery_psuSerialString(lua_State* L) {
 /// Returns:
 ///  * A table containing information about other batteries known to the system, or an empty table if no devices were found
 static int battery_others(lua_State*L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     mach_port_t     masterPort;
     kern_return_t   kr;
@@ -545,7 +545,7 @@ lua_return:
 ///  * Please report any crashes from this function - it's likely that there are Bluetooth devices we haven't tested which may return weird data
 ///  * Many/Most/All non-Apple party products will likely return zeros for all of the battery related fields here, as will Apple HID devices. It seems that these private APIs mostly exist to support Apple/Beats headphones.
 static int battery_private(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     NSMutableArray *privateInfo = [[NSMutableArray alloc] init];
@@ -613,9 +613,9 @@ static const luaL_Reg battery_lib[] = {
     {NULL, NULL}
 };
 
-int luaopen_hs_battery_internal(lua_State* L __unused) {
-    LuaSkin *skin = [LuaSkin shared];
-    [skin registerLibrary:battery_lib metaFunctions:nil];
+int luaopen_hs_battery_internal(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    [skin registerLibrary:"hs.battery" functions:battery_lib metaFunctions:nil];
 
     return 1;
 }

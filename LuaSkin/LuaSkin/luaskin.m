@@ -10,7 +10,7 @@ static int refTable = LUA_NOREF;
 #pragma mark - Support Functions and Classes
 
 static void swapOutObjectInUserdata(lua_State *L, int idx, NSObject *obj, NSObject *newObj) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
 
     // change existing userdata: release old object and retain new one
     void** valuePtr = lua_touserdata(L, idx) ;
@@ -49,7 +49,7 @@ static void swapOutObjectInUserdata(lua_State *L, int idx, NSObject *obj, NSObje
 #pragma mark - Module Functions
 
 static int obj_new(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TANY, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK] ;
     NSObject *obj = [skin toNSObjectAtIndex:1] ;
     LS_NSConversionOptions options = LS_WithObjectWrapper ;
@@ -65,7 +65,7 @@ static int obj_new(lua_State *L) {
 #pragma mark - Module Methods
 
 static int obj_isReadOnly(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TWRAPPEDOBJECT, LS_TBREAK] ;
     NSObject *obj = [skin toNSObjectAtIndex:1] ;
 
@@ -82,7 +82,7 @@ static int obj_isReadOnly(lua_State *L) {
 }
 
 static int obj_children(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TWRAPPEDOBJECT, LS_TBREAK] ;
     NSObject *obj = [skin toNSObjectAtIndex:1] ;
 
@@ -101,8 +101,8 @@ static int obj_children(lua_State *L) {
     return 1 ;
 }
 
-static int obj_value(__unused lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+static int obj_value(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TWRAPPEDOBJECT, LS_TBREAK] ;
     NSObject *obj = [skin toNSObjectAtIndex:1] ;
 
@@ -115,7 +115,7 @@ static int obj_value(__unused lua_State *L) {
 #pragma mark - objectWrapper metaFunctions
 
 static int obj_ud_index(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     NSObject *obj = get_objectFromUserdata(__bridge NSObject, L, 1, LuaSkin_UD_TAG) ;
     NSObject *ans = nil ;
 
@@ -174,7 +174,7 @@ static int obj_ud_index(lua_State *L) {
 }
 
 static int obj_ud_newindex(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     NSObject *obj = get_objectFromUserdata(__bridge NSObject, L, 1, LuaSkin_UD_TAG) ;
     BOOL isMutable = [obj isKindOfClass:[NSMutableArray class]] ||
                      [obj isKindOfClass:[NSMutableDictionary class]] ;
@@ -184,7 +184,7 @@ static int obj_ud_newindex(lua_State *L) {
     lua_getfield(L, -1, "mutable") ;
     isMutable = isMutable && lua_toboolean(L, -1) ;
     lua_getfield(L, -2, "arrayAutoConversion") ;
-    arrayAutoConversion = (BOOL)lua_toboolean(L, -1) ;
+    arrayAutoConversion = (BOOL)(lua_toboolean(L, -1)) ;
     lua_pop(L, 3) ;
 
     if (isMutable) {
@@ -230,7 +230,11 @@ static int obj_ud_newindex(lua_State *L) {
             NSObject *key = [skin toNSObjectAtIndex:2] ;
             NSObject *value = [skin toNSObjectAtIndex:3 withOptions:LS_NSDescribeUnknownTypes] ;
             if (key) {
-                [(NSMutableDictionary *)obj setObject:value forKey:(id <NSCopying>)key] ;
+                if (value) {
+                    [(NSMutableDictionary *)obj setObject:value forKey:(id <NSCopying>)key] ;
+                } else {
+                    [(NSMutableDictionary *)obj removeObjectForKey:(id <NSCopying>)key] ;
+                }
                 if (arrayAutoConversion) {
                     NSUInteger totalKeys = [(NSMutableDictionary *)obj count] ;
                     NSUInteger count     = 0 ;
@@ -278,7 +282,7 @@ static int obj_ud_len(lua_State *L) {
 }
 
 static int obj_ud_tostring(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     NSObject *obj = get_objectFromUserdata(__bridge NSObject, L, 1, LuaSkin_UD_TAG) ;
     NSString *title = [(NSObject *)obj className] ;
     [skin pushNSObject:[NSString stringWithFormat:@"%s: %@ (%p)", LuaSkin_UD_TAG, title, lua_topointer(L, 1)]] ;

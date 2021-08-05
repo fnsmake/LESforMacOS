@@ -3,7 +3,8 @@
 #define VIEW_DEBUG
 
 static const char *USERDATA_TAG = "hs.canvas" ;
-static int refTable = LUA_NOREF;
+static LSRefTable refTable = LUA_NOREF;
+static BOOL defaultCustomSubRole = YES ;
 
 // Can't have "static" or "constant" dynamic NSObjects like NSArray, so define in lua_open
 static NSDictionary *languageDictionary ;
@@ -47,7 +48,8 @@ static NSDictionary *defineLanguageDictionary() {
         @"absolutePosition" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),  // @encode may change depending upon architecture, so use the
+                                                    // same value we check against in isValueValidForDictionary
             @"nullable"    : @(YES),
             @"default"     : @(YES),
             @"optionalFor" : VISIBLE,
@@ -55,7 +57,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"absoluteSize" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(YES),
             @"optionalFor" : VISIBLE,
@@ -63,7 +65,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"antialias" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(YES),
             @"optionalFor" : VISIBLE,
@@ -71,7 +73,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"arcRadii" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(YES),
             @"optionalFor" : @[ @"arc", @"ellipticalArc" ],
@@ -79,7 +81,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"arcClockwise" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(YES),
             @"optionalFor" : @[ @"arc", @"ellipticalArc" ],
@@ -87,7 +89,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"clipToPath" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : CLOSED,
@@ -123,7 +125,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"closed" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(NO),
             @"default"     : @(NO),
             @"requiredFor" : @[ @"segments" ],
@@ -257,7 +259,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"flattenPath" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : PRIMITIVES,
@@ -324,7 +326,8 @@ static NSDictionary *defineLanguageDictionary() {
         },
         @"imageAnimationFrame" : @ {
             @"class"       : @[ [NSNumber class] ],
-            @"objCType"    : @(@encode(lua_Integer)),
+            @"objCType"    : @([@((lua_Integer)1) objCType]), // @encode may change depending upon architecture, so use the
+                                                              // same value we check against in isValueValidForDictionary
             @"luaClass"    : @"integer",
             @"nullable"    : @(YES),
             @"default"     : @(0),
@@ -333,7 +336,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"imageAnimates" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(NO),
             @"default"     : @(NO),
             @"requiredFor" : @[ @"image" ],
@@ -370,7 +373,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"reversePath" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : PRIMITIVES,
@@ -502,7 +505,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"trackMouseByBounds" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : VISIBLE,
@@ -510,7 +513,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"trackMouseEnterExit" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : VISIBLE,
@@ -518,7 +521,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"trackMouseDown" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : VISIBLE,
@@ -526,7 +529,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"trackMouseUp" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : VISIBLE,
@@ -534,7 +537,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"trackMouseMove" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : VISIBLE,
@@ -580,7 +583,7 @@ static NSDictionary *defineLanguageDictionary() {
         @"withShadow" : @{
             @"class"       : @[ [NSNumber class] ],
             @"luaClass"    : @"boolean",
-            @"objCType"    : @(@encode(BOOL)),
+            @"objCType"    : @([@(YES) objCType]),
             @"nullable"    : @(YES),
             @"default"     : @(NO),
             @"optionalFor" : PRIMITIVES,
@@ -813,7 +816,7 @@ static inline NSRect RectWithFlippedYCoordinate(NSRect theRect) {
 }
 
 static int canvas_orderHelper(lua_State *L, NSWindowOrderingMode mode) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBREAK | LS_TVARARG] ;
 
@@ -864,10 +867,8 @@ static int userdata_gc(lua_State* L) ;
 #pragma clang diagnostic pop
 {
 
-    LuaSkin *skin = [LuaSkin shared];
-
     if (!(isfinite(contentRect.origin.x) && isfinite(contentRect.origin.y) && isfinite(contentRect.size.height) && isfinite(contentRect.size.width))) {
-        [skin logError:[NSString stringWithFormat:@"%s:coordinates must be finite numbers", USERDATA_TAG]];
+        [LuaSkin logError:[NSString stringWithFormat:@"%s:coordinates must be finite numbers", USERDATA_TAG]];
         return nil;
     }
 
@@ -896,14 +897,17 @@ static int userdata_gc(lua_State* L) ;
 }
 
 - (NSString *)accessibilitySubrole {
+    NSString *defaultSubrole = [super accessibilitySubrole] ;
+    NSString *customSubrole  = [defaultSubrole stringByAppendingString:@".Hammerspoon"] ;
+
     if (_subroleOverride) {
         if ([_subroleOverride isEqualToString:@""]) {
-            return [super accessibilitySubrole] ;
+            return defaultCustomSubRole ? defaultSubrole : customSubrole ;
         } else {
             return _subroleOverride ;
         }
     } else {
-        return [[super accessibilitySubrole] stringByAppendingString:@".Hammerspoon"] ;
+        return defaultCustomSubRole ? customSubrole : defaultSubrole ;
     }
 }
 
@@ -939,33 +943,35 @@ static int userdata_gc(lua_State* L) ;
     [NSAnimationContext endGrouping];
 }
 
-- (void)fadeOut:(NSTimeInterval)fadeTime andDelete:(BOOL)deleteCanvas {
+- (void)fadeOut:(NSTimeInterval)fadeTime andDelete:(BOOL)deleteCanvas withState:(lua_State *)L {
     CGFloat alphaSetting = self.alphaValue ;
     [NSAnimationContext beginGrouping];
-      __weak HSCanvasWindow *bself = self; // in ARC, __block would increase retain count
-      [[NSAnimationContext currentContext] setDuration:fadeTime];
-      [[NSAnimationContext currentContext] setCompletionHandler:^{
-          // unlikely that bself will go to nil after this starts, but this keeps the warnings down from [-Warc-repeated-use-of-weak]
-          HSCanvasWindow *mySelf = bself ;
-          if (mySelf) {
-              if (deleteCanvas) {
-                  LuaSkin *skin = [LuaSkin shared] ;
-                  lua_State *L = [skin L] ;
-                  lua_pushcfunction(L, userdata_gc) ;
-                  [skin pushLuaRef:refTable ref:((HSCanvasView *)mySelf.contentView).selfRef] ;
-                  // FIXME: Can we switch this lua_pcall() to a LuaSkin protectedCallAndError?
-                  if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
-                      [skin logBreadcrumb:[NSString stringWithFormat:@"%s:error invoking _gc for delete (with fade) method:%s", USERDATA_TAG, lua_tostring(L, -1)]] ;
-                      lua_pop(L, 1) ;
-                      [mySelf close] ;  // the least we can do is close the canvas if an error occurs with __gc
-                  }
-              } else {
-                  [mySelf orderOut:nil];
-                  [mySelf setAlphaValue:alphaSetting];
-              }
-          }
-      }];
-      [[self animator] setAlphaValue:0.0];
+    __weak HSCanvasWindow *bself = self; // in ARC, __block would increase retain count
+    [[NSAnimationContext currentContext] setDuration:fadeTime];
+    [[NSAnimationContext currentContext] setCompletionHandler:^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // unlikely that bself will go to nil after this starts, but this keeps the warnings down from [-Warc-repeated-use-of-weak]
+            HSCanvasWindow *mySelf = bself ;
+            if (mySelf && (((HSCanvasView *)mySelf.contentView).selfRef != LUA_NOREF)) {
+                if (deleteCanvas) {
+                    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
+                    //                   lua_State *L = [skin L] ;
+                    lua_pushcfunction(L, userdata_gc) ;
+                    [skin pushLuaRef:refTable ref:((HSCanvasView *)mySelf.contentView).selfRef] ;
+                    // FIXME: Can we switch this lua_pcall() to a LuaSkin protectedCallAndError?
+                    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+                        [skin logBreadcrumb:[NSString stringWithFormat:@"%s:error invoking _gc for delete (with fade) method:%s", USERDATA_TAG, lua_tostring(L, -1)]] ;
+                        lua_pop(L, 1) ;
+                        [mySelf close] ;  // the least we can do is close the canvas if an error occurs with __gc
+                    }
+                } else {
+                    [mySelf orderOut:nil];
+                    [mySelf setAlphaValue:alphaSetting];
+                }
+            }
+        });
+    }];
+    [[self animator] setAlphaValue:0.0];
     [NSAnimationContext endGrouping];
 }
 @end
@@ -1138,10 +1144,10 @@ static int userdata_gc(lua_State* L) ;
 
 - (void)doMouseCallback:(NSString *)message for:(id)elementIdentifier at:(NSPoint)location {
     if (elementIdentifier && _mouseCallbackRef != LUA_NOREF) {
-        LuaSkin *skin = [LuaSkin shared];
+        LuaSkin *skin = [LuaSkin sharedWithState:NULL];
         _lua_stackguard_entry(skin.L);
         [skin pushLuaRef:refTable ref:_mouseCallbackRef];
-        [skin pushLuaRef:refTable ref:_selfRef] ;
+        [skin pushNSObject:self] ;
         [skin pushNSObject:message] ;
         [skin pushNSObject:elementIdentifier] ;
         lua_pushnumber(skin.L, location.x) ;
@@ -1154,10 +1160,10 @@ static int userdata_gc(lua_State* L) ;
 // NOTE: Do we need/want this?
 - (void)subviewCallback:(id)sender {
     if (_mouseCallbackRef != LUA_NOREF) {
-        LuaSkin *skin = [LuaSkin shared];
+        LuaSkin *skin = [LuaSkin sharedWithState:NULL];
         _lua_stackguard_entry(skin.L);
         [skin pushLuaRef:refTable ref:_mouseCallbackRef];
-        [skin pushLuaRef:refTable ref:_selfRef] ;
+        [skin pushNSObject:self] ;
         [skin pushNSObject:@"_subview_"] ;
         [skin pushNSObject:sender] ;
         [skin protectedCallAndError:@"hs.canvas:buttonCallback" nargs:3 nresults:0];
@@ -1387,8 +1393,6 @@ static int userdata_gc(lua_State* L) ;
 }
 
 - (void)drawRect:(__unused NSRect)rect {
-    NSDisableScreenUpdates() ;
-
     NSGraphicsContext* gc = [NSGraphicsContext currentContext];
     [gc saveGraphicsState];
 
@@ -1526,6 +1530,7 @@ static int userdata_gc(lua_State* L) ;
                     NSView *externalView = [self getElementValueFor:@"canvas" atIndex:idx onlyIfSet:NO] ;
                     if ([externalView isKindOfClass:[NSView class]]) {
                         externalView.needsDisplay = YES ;
+                        if (externalView.hidden) externalView.hidden = NO ;
                         NSNumber *alpha = [self getElementValueFor:@"canvasAlpha" atIndex:idx onlyIfSet:YES] ;
                         if (alpha) externalView.alphaValue = [alpha doubleValue] ;
                         [externalView setFrame:frameRect] ;
@@ -1667,6 +1672,13 @@ static int userdata_gc(lua_State* L) ;
             if (!wasClippingChanged) [gc restoreGraphicsState] ;
 
             if (idx == previousTrackedRealIndex) self->_previousTrackedIndex = [self->_elementBounds count] - 1 ;
+        } else {
+            if ([elementType isEqualToString:@"canvas"]) {
+                NSView *externalView = [self getElementValueFor:@"canvas" atIndex:idx onlyIfSet:NO] ;
+                if ([externalView isKindOfClass:[NSView class]]) {
+                        if (!externalView.hidden) externalView.hidden = YES ;
+                }
+            }
         }
     }] ;
 
@@ -1674,15 +1686,14 @@ static int userdata_gc(lua_State* L) ;
 
     _mouseTracking = needMouseTracking ;
     [gc restoreGraphicsState];
-    NSEnableScreenUpdates() ;
 }
 
 // To facilitate the way frames and points are specified, we get our tables from lua with the LS_NSRawTables option... this forces rect-tables and point-tables to be just that - tables, but also prevents color tables, styledtext tables, and transform tables from being converted... so we add fixes for them here...
 // Plus we allow some "laziness" on the part of the programmer to leave out __luaSkinType when crafting the tables by hand, either to make things cleaner/easier or for historical reasons...
 
-- (id)massageKeyValue:(id)oldValue forKey:(NSString *)keyName {
-    LuaSkin *skin = [LuaSkin shared] ;
-    lua_State *L = [skin L] ;
+- (id)massageKeyValue:(id)oldValue forKey:(NSString *)keyName withState:(lua_State *)L {
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
+//     lua_State *L = [skin L] ;
 
     id newValue = oldValue ; // assume we're not changing anything
 //     [LuaSkin logWarn:[NSString stringWithFormat:@"keyname %@ (%@) oldValue is %@", keyName, NSStringFromClass([oldValue class]), [oldValue debugDescription]]] ;
@@ -1745,7 +1756,7 @@ static int userdata_gc(lua_State* L) ;
     } else if ([oldValue isKindOfClass:[NSDictionary class]]) {
         NSMutableDictionary *blockValue = [[NSMutableDictionary alloc] init] ;
         [oldValue enumerateKeysAndObjectsUsingBlock:^(id blockKeyName, id valueForKey, __unused BOOL *stop) {
-            [blockValue setObject:[self massageKeyValue:valueForKey forKey:blockKeyName] forKey:blockKeyName] ;
+            [blockValue setObject:[self massageKeyValue:valueForKey forKey:blockKeyName withState:L] forKey:blockKeyName] ;
         }] ;
         newValue = blockValue ;
     }
@@ -1775,10 +1786,10 @@ static int userdata_gc(lua_State* L) ;
     return result ;
 }
 
-- (attributeValidity)setDefaultFor:(NSString *)keyName to:(id)keyValue {
+- (attributeValidity)setDefaultFor:(NSString *)keyName to:(id)keyValue withState:(lua_State *)L {
     attributeValidity validityStatus       = attributeInvalid ;
     if ([languageDictionary[keyName][@"nullable"] boolValue]) {
-        keyValue = [self massageKeyValue:keyValue forKey:keyName] ;
+        keyValue = [self massageKeyValue:keyValue forKey:keyName withState:L] ;
         validityStatus = isValueValidForAttribute(keyName, keyValue) ;
         switch (validityStatus) {
             case attributeValid:
@@ -1811,7 +1822,7 @@ static int userdata_gc(lua_State* L) ;
 }
 
 - (id)getElementValueFor:(NSString *)keyName atIndex:(NSUInteger)index resolvePercentages:(BOOL)resolvePercentages onlyIfSet:(BOOL)onlyIfSet {
-    if (index > [_elementList count]) return nil ;
+    if (index >= [_elementList count]) return nil ;
     NSDictionary *elementAttributes = _elementList[index] ;
     id foundObject = elementAttributes[keyName] ? elementAttributes[keyName] : (onlyIfSet ? nil : [self getDefaultValueFor:keyName onlyIfSet:NO]) ;
     if ([[foundObject class] conformsToProtocol:@protocol(NSMutableCopying)]) {
@@ -1894,9 +1905,9 @@ static int userdata_gc(lua_State* L) ;
     return foundObject ;
 }
 
-- (attributeValidity)setElementValueFor:(NSString *)keyName atIndex:(NSUInteger)index to:(id)keyValue {
-    if (index > [_elementList count]) return attributeInvalid ;
-    keyValue = [self massageKeyValue:keyValue forKey:keyName] ;
+- (attributeValidity)setElementValueFor:(NSString *)keyName atIndex:(NSUInteger)index to:(id)keyValue withState:(lua_State *)L {
+    if (index >= [_elementList count]) return attributeInvalid ;
+    keyValue = [self massageKeyValue:keyValue forKey:keyName withState:L] ;
     __block attributeValidity validityStatus = isValueValidForAttribute(keyName, keyValue) ;
 
     switch (validityStatus) {
@@ -2070,7 +2081,7 @@ static int userdata_gc(lua_State* L) ;
                 }] ;
                 for (NSString *additionalKey in defaultsForType) {
                     if (!_elementList[index][additionalKey]) {
-                        [self setElementValueFor:additionalKey atIndex:index to:[self getDefaultValueFor:additionalKey onlyIfSet:NO]] ;
+                        [self setElementValueFor:additionalKey atIndex:index to:[self getDefaultValueFor:additionalKey onlyIfSet:NO] withState:L] ;
                     }
                 }
             }
@@ -2191,7 +2202,7 @@ static int userdata_gc(lua_State* L) ;
 - (BOOL)draggingCallback:(NSString *)message with:(id<NSDraggingInfo>)sender {
     BOOL isAllGood = NO ;
     if (_draggingCallbackRef != LUA_NOREF) {
-        LuaSkin *skin = [LuaSkin shared] ;
+        LuaSkin *skin = [LuaSkin sharedWithState:NULL] ;
         lua_State *L = skin.L ;
         _lua_stackguard_entry(L);
         int argCount = 2 ;
@@ -2274,6 +2285,33 @@ static int userdata_gc(lua_State* L) ;
 
 #pragma mark - Module Functions
 
+/// hs.canvas.useCustomAccessibilitySubrole([state]) -> boolean
+/// Function
+/// Get or set whether or not canvas objects use a custom accessibility subrole for the contaning system window.
+///
+/// Parameters:
+///  * `state` - an optional boolean, default true, specifying whether or not canvas containers should use a custom accessibility subrole.
+///
+/// Returns:
+///  * the current, possibly changed, value as a boolean
+///
+/// Notes:
+///  * Under some conditions, it has been observed that Hammerspoon's `hs.window.filter` module will misidentify Canvas and Drawing objects as windows of the Hammerspoon application that it should consider when evaluating its filters. To eliminate this, `hs.canvas` objects (and previously `hs.drawing` objects, which are now deprecated and pass through to `hs.canvas`) were given a nonstandard accessibilty subrole to prevent them from being included. This has caused some issues with third party tools, like Yabai, which also use the accessibility subroles for determining what actions it may take with Hammerspoon windows.
+///
+///  * By passing `false` to this function, all canvas objects will revert to specifying the standard subrole for the containing windows by default and should work as expected with third party tools. Note that this may cause issues or slowdowns if you are also using `hs.window.filter`; a more permanent solution is being considered.
+///
+///  * If you need to control the subrole of canvas objects more specifically, or only for some canvas objects, see [hs.canvas:_accessibilitySubrole](#_accessibilitySubrole).
+static int canvas_useCustomAccessibilitySubrole(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
+    [skin checkArgs:LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK] ;
+
+    if (lua_gettop(L) == 1) {
+        defaultCustomSubRole = lua_toboolean(L, 1) ;
+    }
+    lua_pushboolean(L, defaultCustomSubRole) ;
+    return 1 ;
+}
+
 /// hs.canvas.new(rect) -> canvasObject
 /// Constructor
 /// Create a new canvas object at the specified coordinates
@@ -2288,7 +2326,7 @@ static int userdata_gc(lua_State* L) ;
 ///  * The size of the canvas defines the visible area of the canvas -- any portion of a canvas element which extends past the canvas's edges will be clipped.
 ///  * a rect-table is a table with key-value pairs specifying the top-left coordinate on the screen for the canvas (keys `x`  and `y`) and the size (keys `h` and `w`) of the canvas. The table may be crafted by any method which includes these keys, including the use of an `hs.geometry` object.
 static int canvas_new(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TTABLE, LS_TBREAK] ;
 
     HSCanvasWindow *canvasWindow = [[HSCanvasWindow alloc] initWithContentRect:[skin tableToRectAtIndex:1]
@@ -2319,53 +2357,11 @@ static int canvas_new(lua_State *L) {
 ///
 /// Notes:
 ///  * This is primarily for debugging purposes and may be removed in the future.
-static int dumpLanguageDictionary(__unused lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+static int dumpLanguageDictionary(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TBREAK] ;
     [skin pushNSObject:languageDictionary withOptions:LS_NSDescribeUnknownTypes] ;
     return 1 ;
-}
-
-/// hs.canvas.disableScreenUpdates() -> None
-/// Function
-/// Tells the OS X window server to pause updating the physical displays for a short while.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * None
-///
-/// Notes:
-///  * This method can be used to allow multiple changes which are being made to the users display appear as if they all occur simultaneously by holding off on updating the screen on the regular schedule.
-///  * This method should always be balanced with a call to [hs.canvas.enableScreenUpdates](#enableScreenUpdates) when your updates have been completed.  Failure to do so will be logged in the system logs.
-///
-///  * The window server will only allow you to pause updates for up to 1 second.  This prevents a rogue or hung process from locking the system`s display completely.  Updates will be resumed when [hs.canvas.enableScreenUpdates](#enableScreenUpdates) is encountered or after 1 second, whichever comes first.
-static int disableUpdates(__unused lua_State *L) {
-    [[LuaSkin shared] checkArgs:LS_TBREAK] ;
-    NSDisableScreenUpdates() ;
-    return 0 ;
-}
-
-/// hs.canvas.enableScreenUpdates() -> None
-/// Function
-/// Tells the OS X window server to resume updating the physical displays after a previous pause.
-///
-/// Parameters:
-///  * None
-///
-/// Returns:
-///  * None
-///
-/// Notes:
-///  * In conjunction with [hs.canvas.disableScreenUpdates](#disableScreenUpdates), this method can be used to allow multiple changes which are being made to the users display appear as if they all occur simultaneously by holding off on updating the screen on the regular schedule.
-///  * This method should always be preceded by a call to [hs.canvas.disableScreenUpdates](#disableScreenUpdates).  Failure to do so will be logged in the system logs.
-///
-///  * The window server will only allow you to pause updates for up to 1 second.  This prevents a rogue or hung process from locking the system`s display completely.  Updates will be resumed when this function is encountered  or after 1 second, whichever comes first.
-static int enableUpdates(__unused lua_State *L) {
-    [[LuaSkin shared] checkArgs:LS_TBREAK] ;
-    NSEnableScreenUpdates() ;
-    return 0 ;
 }
 
 /// hs.canvas.defaultTextStyle() -> `hs.styledtext` attributes table
@@ -2381,7 +2377,7 @@ static int enableUpdates(__unused lua_State *L) {
 /// Notes:
 ///  * This method is intended to be used in conjunction with `hs.styledtext` to create styledtext objects that are based on, or a slight variation of, the defaults used by `hs.canvas`.
 static int default_textAttributes(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TBREAK] ;
     lua_newtable(L) ;
     NSString *fontName = languageDictionary[@"textFont"][@"default"] ;
@@ -2401,7 +2397,7 @@ static int default_textAttributes(lua_State *L) {
 
 #pragma mark - Module Methods
 
-/// hs.canvas:draggingCallback(fn | nil) -> canvasObject
+/// hs.canvas:draggingCallback(fn) -> canvasObject
 /// Method
 /// Sets or remove a callback for accepting dragging and dropping items onto the canvas.
 ///
@@ -2430,7 +2426,7 @@ static int default_textAttributes(lua_State *L) {
 ///  * A canvas object can only accept drag-and-drop items when its window level is at [hs.canvas.windowLevels.dragging](#windowLevels) or lower.
 ///  * a canvas object can only accept drag-and-drop items when it accepts mouse events.  You must define a [hs.canvas:mouseCallback](#mouseCallback) function, even if it is only a placeholder, e.g. `hs.canvas:mouseCallback(function() end)`
 static int canvas_draggingCallback(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TFUNCTION | LS_TNIL, LS_TBREAK] ;
     HSCanvasView   *canvasView   = [skin luaObjectAtIndex:1 toClass:"HSCanvasView"] ;
 
@@ -2447,8 +2443,29 @@ static int canvas_draggingCallback(lua_State *L) {
     return 1;
 }
 
+/// hs.canvas:_accessibilitySubrole([subrole]) -> canvasObject | current value
+/// Method
+/// Get or set the accessibility subrole returned by `hs.canvas` objects.
+///
+/// Parameters:
+///  * `subrole` - an optional string or explicit nil wihch specifies what accessibility subrole value should be returned when canvas objects are queried through the macOS accessibility framework. See Notes for a discussion of how this value is interpreted. Defaults to `nil`.
+///
+/// Returns:
+///  * If an argument is specified, returns the canvasObject; otherwise returns the current value.
+///
+/// Notes:
+///  * Most people will probably not need to use this method; See [hs.canvas.useCustomAccessibilitySubrole](#useCustomAccessibilitySubrole) for a discussion as to why this method may be of use when Hammerspoon is being controlled through the accessibility framework by other applications.
+///
+///  * If a non empty string is specified as the argument to this method, the string will be returned whenever the canvas object's containing window is queried for its accessibility subrole.
+///  * The other possible values depend upon the value registerd with [hs.canvas.useCustomAccessibilitySubrole](#useCustomAccessibilitySubrole):
+///    * If `useCustomAccessibilitySubrole` is set to true (the default):
+///      * If an explicit `nil` (the default) is specified fror this method, the string returned when the canvas object's accessibility is queried will be the default macOS subrole for the canvas's window with the string ".Hammerspoon` appended to it.
+///      * If the empty string is specified (e.g. `""`), then the default macOS subrole for the canvas's window will be returned.
+///    * If `useCustomAccessibilitySubrole` is set to false:
+///      * If an explicit `nil` (the default) is specified fror this method, then the default macOS subrole for the canvas's window will be returned.
+///      * If the empty string is specified (e.g. `""`), the string returned when the canvas object's accessibility is queried will be the default macOS subrole for the canvas's window with the string ".Hammerspoon` appended to it.
 static int canvas_accessibilitySubrole(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TSTRING | LS_TNIL | LS_TOPTIONAL, LS_TBREAK] ;
     HSCanvasView   *canvasView   = [skin luaObjectAtIndex:1 toClass:"HSCanvasView"] ;
     HSCanvasWindow *canvasWindow = (HSCanvasWindow *)canvasView.window ;
@@ -2476,7 +2493,7 @@ static int canvas_accessibilitySubrole(lua_State *L) {
 /// Notes:
 ///  * Multi-line text (separated by a newline or return) is supported.  The height will be for the multiple lines and the width returned will be for the longest line.
 static int canvas_getTextElementSize(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK | LS_TVARARG] ;
     HSCanvasView   *canvasView   = [skin luaObjectAtIndex:1 toClass:"HSCanvasView"] ;
     int        textIndex    = 2 ;
@@ -2553,7 +2570,7 @@ static int canvas_getTextElementSize(lua_State *L) {
 /// Notes:
 ///  * An example use for this method would be to change the canvas's origin point { x = 0, y = 0 } from the lower left corner of the canvas to somewhere else, like the middle of the canvas.
 static int canvas_canvasTransformation(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TTABLE | LS_TNIL | LS_TOPTIONAL, LS_TBREAK] ;
     HSCanvasView   *canvasView   = [skin luaObjectAtIndex:1 toClass:"HSCanvasView"] ;
 
@@ -2582,7 +2599,7 @@ static int canvas_canvasTransformation(lua_State *L) {
 /// Notes:
 ///  * if the canvas is in use as an element in another canvas, this method will result in an error.
 static int canvas_show(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -2617,7 +2634,7 @@ static int canvas_show(lua_State *L) {
 /// Returns:
 ///  * The canvas object
 static int canvas_hide(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -2633,7 +2650,7 @@ static int canvas_hide(lua_State *L) {
         }
     } else {
         if (parentIsWindow(canvasView)) {
-            [canvasWindow fadeOut:lua_tonumber(L, 2) andDelete:NO];
+            [canvasWindow fadeOut:lua_tonumber(L, 2) andDelete:NO withState:L];
         } else {
             [canvasView fadeOut:lua_tonumber(L, 2) andDelete:NO];
         }
@@ -2671,7 +2688,7 @@ static int canvas_hide(lua_State *L) {
 ///
 ///  * Clipping regions which remove content from the visible area of a rendered object are ignored for the purposes of element hit-detection.
 static int canvas_mouseCallback(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TFUNCTION | LS_TNIL,
                     LS_TBREAK] ;
@@ -2707,7 +2724,7 @@ static int canvas_mouseCallback(lua_State *L) {
 /// Notes:
 ///  * Setting this to false changes a canvas object's AXsubrole value and may affect the results of filters used with `hs.window.filter`, depending upon how they are defined.
 static int canvas_clickActivating(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBOOLEAN | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -2747,7 +2764,7 @@ static int canvas_clickActivating(lua_State *L) {
 ///
 ///  * Use [hs.canvas:mouseCallback](#mouseCallback) to set the callback function.  The identifier field in the callback's argument list will be "_canvas_", but otherwise identical to those specified in [hs.canvas:mouseCallback](#mouseCallback).
 static int canvas_canvasMouseEvents(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBOOLEAN | LS_TNIL | LS_TOPTIONAL,
                     LS_TBOOLEAN | LS_TNIL | LS_TOPTIONAL,
@@ -2795,7 +2812,7 @@ static int canvas_canvasMouseEvents(lua_State *L) {
 /// Notes:
 ///  * a point-table is a table with key-value pairs specifying the new top-left coordinate on the screen of the canvas (keys `x`  and `y`). The table may be crafted by any method which includes these keys, including the use of an `hs.geometry` object.
 static int canvas_topLeft(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TTABLE | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -2831,8 +2848,8 @@ static int canvas_topLeft(lua_State *L) {
 ///
 /// Notes:
 ///  * The canvas does not have to be visible in order for an image to be generated from it.
-static int canvas_canvasAsImage(__unused lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+static int canvas_canvasAsImage(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBREAK] ;
 
@@ -2860,7 +2877,7 @@ static int canvas_canvasAsImage(__unused lua_State *L) {
 ///  * elements in the canvas that have the `absolutePosition` attribute set to false will be moved so that their relative position within the canvas remains the same with respect to the new size.
 ///  * elements in the canvas that have the `absoluteSize` attribute set to false will be resized so that their relative size with respect to the canvas remains the same with respect to the new size.
 static int canvas_size(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TTABLE | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -2948,7 +2965,7 @@ static int canvas_size(lua_State *L) {
 /// Returns:
 ///  * If an argument is provided, the canvas object; otherwise the current value.
 static int canvas_alpha(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -3017,7 +3034,7 @@ static int canvas_orderBelow(lua_State *L) {
 /// Returns:
 ///  * If an argument is provided, the canvas object; otherwise the current value.
 static int canvas_level(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TSTRING | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -3070,7 +3087,7 @@ static int canvas_level(lua_State *L) {
 /// Notes:
 ///  * This method can help smooth the display of small text objects on non-Retina monitors.
 static int canvas_wantsLayer(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBOOLEAN | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -3089,7 +3106,7 @@ static int canvas_wantsLayer(lua_State *L) {
 }
 
 static int canvas_behavior(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -3135,7 +3152,7 @@ static int canvas_behavior(lua_State *L) {
 /// Notes:
 ///  * This method is automatically called during garbage collection, notably during a Hammerspoon termination or reload, with a fade time of 0.
 static int canvas_delete(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -3152,7 +3169,7 @@ static int canvas_delete(lua_State *L) {
             [canvasWindow close] ; // the least we can do is close the canvas if an error occurs with __gc
         }
     } else {
-        [canvasWindow fadeOut:lua_tonumber(L, 2) andDelete:YES];
+        [canvasWindow fadeOut:lua_tonumber(L, 2) andDelete:YES withState:L];
     }
 
     lua_pushnil(L);
@@ -3173,7 +3190,7 @@ static int canvas_delete(lua_State *L) {
 ///  * This method only determines whether or not the canvas is being shown or is hidden -- it does not indicate whether or not the canvas is currently off screen or is occluded by other objects.
 ///  * See also [hs.canvas:isOccluded](#isOccluded).
 static int canvas_isShowing(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBREAK] ;
 
@@ -3203,7 +3220,7 @@ static int canvas_isShowing(lua_State *L) {
 ///  * a canvas that is currently hidden or with a height of 0 or a width of 0 is considered occluded.
 ///  * See also [hs.canvas:isShowing](#isShowing).
 static int canvas_isOccluded(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBREAK] ;
 
@@ -3232,7 +3249,7 @@ static int canvas_isOccluded(lua_State *L) {
 ///  * Not all keys will apply to all element types.
 ///  * Currently set and built-in defaults may be retrieved in a table with [hs.canvas:canvasDefaults](#canvasDefaults).
 static int canvas_canvasDefaultFor(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TSTRING,
                     LS_TANY | LS_TOPTIONAL,
@@ -3255,7 +3272,7 @@ static int canvas_canvasDefaultFor(lua_State *L) {
     } else {
         id keyValue = [skin toNSObjectAtIndex:3 withOptions:LS_NSRawTables] ;
 
-        switch([canvasView setDefaultFor:keyName to:keyValue]) {
+        switch([canvasView setDefaultFor:keyName to:keyValue withState:L]) {
             case attributeValid:
             case attributeNulling:
                 break ;
@@ -3288,7 +3305,7 @@ static int canvas_canvasDefaultFor(lua_State *L) {
 /// Notes:
 ///  * see also [hs.canvas:assignElement](#assignElement).
 static int canvas_insertElementAtIndex(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TTABLE,
                     LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL,
@@ -3308,9 +3325,9 @@ static int canvas_insertElementAtIndex(lua_State *L) {
             [canvasView.elementList insertObject:[[NSMutableDictionary alloc] init] atIndex:(NSUInteger)tablePosition] ;
             [element enumerateKeysAndObjectsUsingBlock:^(NSString *keyName, id keyValue, __unused BOOL *stop) {
                 // skip type in here to minimize the need to copy in defaults just to be overwritten
-                if (![keyName isEqualTo:@"type"]) [canvasView setElementValueFor:keyName atIndex:(NSUInteger)tablePosition to:keyValue] ;
+                if (![keyName isEqualTo:@"type"]) [canvasView setElementValueFor:keyName atIndex:(NSUInteger)tablePosition to:keyValue withState:L] ;
             }] ;
-            [canvasView setElementValueFor:@"type" atIndex:(NSUInteger)tablePosition to:elementType] ;
+            [canvasView setElementValueFor:@"type" atIndex:(NSUInteger)tablePosition to:elementType withState:L] ;
         } else {
             return luaL_argerror(L, 2, [[NSString stringWithFormat:@"invalid type %@; must be one of %@", elementType, [ALL_TYPES componentsJoinedByString:@", "]] UTF8String]) ;
         }
@@ -3333,7 +3350,7 @@ static int canvas_insertElementAtIndex(lua_State *L) {
 /// Returns:
 ///  * the canvasObject
 static int canvas_removeElementAtIndex(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -3368,7 +3385,7 @@ static int canvas_removeElementAtIndex(lua_State *L) {
 /// Returns:
 ///  * if a value for the attribute is specified, returns the canvas object; otherwise returns the current value for the specified attribute.
 static int canvas_elementAttributeAtIndex(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TINTEGER,
                     LS_TSTRING,
@@ -3406,7 +3423,7 @@ static int canvas_elementAttributeAtIndex(lua_State *L) {
         [skin pushNSObject:[canvasView getElementValueFor:keyName atIndex:(NSUInteger)tablePosition resolvePercentages:resolvePercentages onlyIfSet:NO]] ;
     } else {
         id keyValue = [skin toNSObjectAtIndex:4 withOptions:LS_NSRawTables] ;
-        switch([canvasView setElementValueFor:keyName atIndex:(NSUInteger)tablePosition to:keyValue]) {
+        switch([canvasView setElementValueFor:keyName atIndex:(NSUInteger)tablePosition to:keyValue withState:L]) {
             case attributeValid:
             case attributeNulling:
                 lua_pushvalue(L, 1) ;
@@ -3434,7 +3451,7 @@ static int canvas_elementAttributeAtIndex(lua_State *L) {
 /// Notes:
 ///  * Any attribute which has been explicitly set for the element will be included in the key list (even if it is ignored for the element type).  If the `optional` flag is set to true, the *additional* attribute names added to the list will only include those which are relevant to the element type.
 static int canvas_elementKeysAtIndex(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TINTEGER,
                     LS_TBOOLEAN | LS_TOPTIONAL,
@@ -3471,7 +3488,7 @@ static int canvas_elementKeysAtIndex(lua_State *L) {
 /// Returns:
 ///  * the number of elements currently defined for the canvas object.
 static int canvas_elementCount(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK] ;
     HSCanvasView   *canvasView   = [skin luaObjectAtIndex:1 toClass:"HSCanvasView"] ;
     lua_pushinteger(L, (lua_Integer)[canvasView.elementList count]) ;
@@ -3492,7 +3509,7 @@ static int canvas_elementCount(lua_State *L) {
 ///  * Not all keys will apply to all element types.
 ///  * To change the defaults for the canvas, use [hs.canvas:canvasDefaultFor](#canvasDefaultFor).
 static int canvas_canvasDefaults(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBOOLEAN | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -3521,7 +3538,7 @@ static int canvas_canvasDefaults(lua_State *L) {
 /// Returns:
 ///  * a table containing the key names for the defaults which are set for this canvas. May also optionally include key names for all attributes which have a default value defined by the module.
 static int canvas_canvasDefaultKeys(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBOOLEAN | LS_TOPTIONAL,
                     LS_TBREAK] ;
@@ -3549,7 +3566,7 @@ static int canvas_canvasDefaultKeys(lua_State *L) {
 /// Returns:
 ///  * an array of element tables which are defined for the canvas.
 static int canvas_canvasElements(__unused lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TBREAK] ;
     HSCanvasView   *canvasView   = [skin luaObjectAtIndex:1 toClass:"HSCanvasView"] ;
@@ -3570,7 +3587,7 @@ static int canvas_canvasElements(__unused lua_State *L) {
 /// Notes:
 ///  * For many elements, this will be the same as the element frame.  For items without a frame (e.g. `segments`, `circle`, etc.) this will be the smallest rectangle which can fully contain the canvas element as specified by it's attributes.
 static int canvas_elementBoundsAtIndex(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TNUMBER | LS_TINTEGER,
                     LS_TBREAK] ;
@@ -3579,7 +3596,7 @@ static int canvas_elementBoundsAtIndex(lua_State *L) {
     NSUInteger      elementCount  = [canvasView.elementList count] ;
     NSInteger       tablePosition = (lua_tointeger(L, 2) - 1) ;
 
-    if (tablePosition < 0 || tablePosition > (NSInteger)elementCount - 1) {
+    if (tablePosition < 0 || tablePosition >= (NSInteger)elementCount) {
         return luaL_argerror(L, 3, [[NSString stringWithFormat:@"index %ld out of bounds", tablePosition + 1] UTF8String]) ;
     }
 
@@ -3623,7 +3640,7 @@ static int canvas_elementBoundsAtIndex(lua_State *L) {
 /// Notes:
 ///  * When the index specified is the canvas element count + 1, the behavior of this method is the same as [hs.canvas:insertElement](#insertElement); i.e. it adds the new element to the end of the currently defined element list.
 static int canvas_assignElementAtIndex(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG,
                     LS_TTABLE | LS_TNIL,
                     LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL,
@@ -3655,9 +3672,9 @@ static int canvas_assignElementAtIndex(lua_State *L) {
                 canvasView.elementList[realIndex] = [[NSMutableDictionary alloc] init] ;
                 [element enumerateKeysAndObjectsUsingBlock:^(NSString *keyName, id keyValue, __unused BOOL *stop) {
                     // skip type in here to minimize the need to copy in defaults just to be overwritten
-                    if (![keyName isEqualTo:@"type"]) [canvasView setElementValueFor:keyName atIndex:realIndex to:keyValue] ;
+                    if (![keyName isEqualTo:@"type"]) [canvasView setElementValueFor:keyName atIndex:realIndex to:keyValue withState:L] ;
                 }] ;
-                [canvasView setElementValueFor:@"type" atIndex:realIndex to:elementType] ;
+                [canvasView setElementValueFor:@"type" atIndex:realIndex to:elementType withState:L] ;
             } else {
                 return luaL_argerror(L, 2, [[NSString stringWithFormat:@"invalid type %@; must be one of %@", elementType, [ALL_TYPES componentsJoinedByString:@", "]] UTF8String]) ;
             }
@@ -3697,8 +3714,8 @@ static int canvas_assignElementAtIndex(lua_State *L) {
 /// In each equation, R is the resulting (premultiplied) color, S is the source color, D is the destination color, Sa is the alpha value of the source color, and Da is the alpha value of the destination color.
 ///
 /// The `source` object is the individual element as it is rendered in order within the canvas, and the `destination` object is the combined state of the previous elements as they have been composited within the canvas.
-static int pushCompositeTypes(__unused lua_State *L) {
-    [[LuaSkin shared] pushNSObject:COMPOSITING_TYPES] ;
+static int pushCompositeTypes(lua_State *L) {
+    [[LuaSkin sharedWithState:L] pushNSObject:COMPOSITING_TYPES] ;
     return 1 ;
 }
 
@@ -3825,7 +3842,7 @@ static int cg_windowLevels(lua_State *L) {
 // delegates and blocks.
 
 static int pushHSCanvasView(lua_State *L, id obj) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     HSCanvasView *value = obj;
     if (value.selfRef == LUA_NOREF) {
         void** valuePtr = lua_newuserdata(L, sizeof(HSCanvasView *));
@@ -3839,7 +3856,7 @@ static int pushHSCanvasView(lua_State *L, id obj) {
 }
 
 static id toHSCanvasViewFromLua(lua_State *L, int idx) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     HSCanvasView *value ;
     if (luaL_testudata(L, idx, USERDATA_TAG)) {
         value = get_objectFromUserdata(__bridge HSCanvasView, L, idx, USERDATA_TAG) ;
@@ -3853,7 +3870,7 @@ static id toHSCanvasViewFromLua(lua_State *L, int idx) {
 #pragma mark - Hammerspoon/Lua Infrastructure
 
 static int userdata_tostring(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     HSCanvasView *obj = [skin luaObjectAtIndex:1 toClass:"HSCanvasView"] ;
     NSString *title ;
     if (parentIsWindow(obj)) {
@@ -3869,7 +3886,7 @@ static int userdata_eq(lua_State* L) {
 // can't get here if at least one of us isn't a userdata type, and we only care if both types are ours,
 // so use luaL_testudata before the macro causes a lua error
     if (luaL_testudata(L, 1, USERDATA_TAG) && luaL_testudata(L, 2, USERDATA_TAG)) {
-        LuaSkin *skin = [LuaSkin shared] ;
+        LuaSkin *skin = [LuaSkin sharedWithState:L] ;
         HSCanvasView *obj1 = [skin luaObjectAtIndex:1 toClass:"HSCanvasView"] ;
         HSCanvasView *obj2 = [skin luaObjectAtIndex:2 toClass:"HSCanvasView"] ;
         lua_pushboolean(L, [obj1 isEqualTo:obj2]) ;
@@ -3880,7 +3897,7 @@ static int userdata_eq(lua_State* L) {
 }
 
 static int userdata_gc(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     HSCanvasView *theView = get_objectFromUserdata(__bridge_transfer HSCanvasView, L, 1, USERDATA_TAG) ;
     if (theView) {
         if (!parentIsWindow(theView)) [theView removeFromSuperview] ;
@@ -3888,6 +3905,10 @@ static int userdata_gc(lua_State* L) {
         theView.draggingCallbackRef = [skin luaUnref:refTable ref:theView.draggingCallbackRef] ;
 
         theView.selfRef          = [skin luaUnref:refTable ref:theView.selfRef] ;
+
+        NSDockTile *tile     = [[NSApplication sharedApplication] dockTile];
+        NSView     *tileView = tile.contentView ;
+        if (tileView && [theView isEqualTo:tileView]) tile.contentView = nil ;
 
         HSCanvasWindow *theWindow = theView.wrapperWindow ;
         if (theWindow) [theWindow close];
@@ -3951,16 +3972,15 @@ static const luaL_Reg userdata_metaLib[] = {
 // Functions for returned object when module loads
 static luaL_Reg moduleLib[] = {
     {"defaultTextStyle",     default_textAttributes},
-    {"disableScreenUpdates", disableUpdates},
     {"elementSpec",          dumpLanguageDictionary},
-    {"enableScreenUpdates",  enableUpdates},
     {"new",                  canvas_new},
+    {"useCustomAccessibilitySubrole", canvas_useCustomAccessibilitySubrole},
 
     {NULL,                   NULL}
 };
 
 int luaopen_hs_canvas_internal(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     refTable = [skin registerLibraryWithObject:USERDATA_TAG
                                      functions:moduleLib
                                  metaFunctions:nil    // or module_metaLib
@@ -3975,6 +3995,9 @@ int luaopen_hs_canvas_internal(lua_State* L) {
     pushCompositeTypes(L) ;      lua_setfield(L, -2, "compositeTypes") ;
     pushCollectionTypeTable(L) ; lua_setfield(L, -2, "windowBehaviors") ;
     cg_windowLevels(L) ;         lua_setfield(L, -2, "windowLevels") ;
+
+    // in case we're reloaded, return to default state
+    defaultCustomSubRole = YES ;
 
     return 1;
 }

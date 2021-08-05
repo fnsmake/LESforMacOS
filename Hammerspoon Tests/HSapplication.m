@@ -8,11 +8,11 @@
 
 #import "HSTestCase.h"
 
-@interface HSapplication : HSTestCase
+@interface HSapplicationTests : HSTestCase
 
 @end
 
-@implementation HSapplication
+@implementation HSapplicationTests
 
 - (void)setUp {
     [super setUpWithRequire:@"test_application"];
@@ -22,6 +22,15 @@
 - (void)tearDown {
     // Put teardown code here. This method is called after the invocation of each test method in the class.
     [super tearDown];
+}
+
+- (void)testInitWithPidFailures {
+    RUN_LUA_TEST()
+}
+
+- (void)testInitWithPid {
+    SKIP_IN_GITHUB_ACTIONS() // Added by @asmagill
+    RUN_LUA_TEST()
 }
 
 - (void)testAttributesFromBundleID {
@@ -38,6 +47,7 @@
 
 - (void)testFrontmostApplication {
     SKIP_IN_TRAVIS()
+    SKIP_IN_GITHUB_ACTIONS()
     RUN_LUA_TEST()
 }
 
@@ -47,6 +57,7 @@
 
 - (void)testHiding {
     SKIP_IN_TRAVIS()
+    SKIP_IN_GITHUB_ACTIONS()
     [self luaTestWithCheckAndTimeOut:5 setupCode:@"testHiding()" checkCode:@"testHidingValues()"];
 }
 
@@ -62,6 +73,7 @@
 
 - (void)testWindows {
     SKIP_IN_TRAVIS()
+    SKIP_IN_GITHUB_ACTIONS()
     [self luaTestWithCheckAndTimeOut:5 setupCode:@"testWindows()" checkCode:@"testWindowsValues()"];
 }
 
@@ -71,5 +83,9 @@
 
 - (void)testMenusAsync {
     [self luaTestWithCheckAndTimeOut:5 setupCode:@"testMenusAsync()" checkCode:@"testMenusAsyncValues()"];
+}
+
+- (void)testUTI {
+    RUN_LUA_TEST()
 }
 @end

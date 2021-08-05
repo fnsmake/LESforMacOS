@@ -28,7 +28,7 @@
 - (void) reflectDefaults ;
 @end
 
-static int refTable = LUA_NOREF;
+static LSRefTable refTable = LUA_NOREF;
 
 /// hs.console.darkMode([state]) -> bool
 /// Function
@@ -50,7 +50,7 @@ static int refTable = LUA_NOREF;
 ///    end
 ///.   ```
 static int consoleDarkMode(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBOOLEAN|LS_TOPTIONAL, LS_TBREAK];
 
     if (lua_isboolean(L, 1)) {
@@ -67,16 +67,16 @@ static int consoleDarkMode(lua_State* L) {
 /// Get or set the color that regular output displayed in the Hammerspoon console is displayed with.
 ///
 /// Parameters:
-/// * color - an optional table containing color keys as described in `hs.drawing.color`
+///  * color - an optional table containing color keys as described in `hs.drawing.color`
 ///
 /// Returns:
-/// * the current color setting as a table
+///  * the current color setting as a table
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 static int console_consolePrintColor(lua_State *L) {
-    LuaSkin *skin      = [LuaSkin shared];
+    LuaSkin *skin      = [LuaSkin sharedWithState:L];
     //NSTextView *output = [MJConsoleWindowController singleton].outputView;
 
     if (lua_type(L, 1) != LUA_TNONE) {
@@ -93,16 +93,16 @@ static int console_consolePrintColor(lua_State *L) {
 /// Get or set the font used in the Hammerspoon console.
 ///
 /// Parameters:
-/// * font - an optional string or table describing the font to use in the console. If a string is specified, then the default system font size will be used.  If a table is specified, it should contain a `name` key-value pair and a `size` key-value pair describing the font to be used.
+///  * font - an optional string or table describing the font to use in the console. If a string is specified, then the default system font size will be used.  If a table is specified, it should contain a `name` key-value pair and a `size` key-value pair describing the font to be used.
 ///
 /// Returns:
-/// * the current font setting as a table containing a `name` key and a `size` key.
+///  * the current font setting as a table containing a `name` key and a `size` key.
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current font.
 static int console_consoleFont(lua_State *L) {
-    LuaSkin *skin      = [LuaSkin shared];
+    LuaSkin *skin      = [LuaSkin sharedWithState:L];
     //NSTextView *output = [MJConsoleWindowController singleton].outputView;
 
     if (lua_type(L, 1) != LUA_TNONE) {
@@ -119,16 +119,16 @@ static int console_consoleFont(lua_State *L) {
 /// Get or set the color that commands displayed in the Hammerspoon console are displayed with.
 ///
 /// Parameters:
-/// * color - an optional table containing color keys as described in `hs.drawing.color`
+///  * color - an optional table containing color keys as described in `hs.drawing.color`
 ///
 /// Returns:
-/// * the current color setting as a table
+///  * the current color setting as a table
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 static int console_consoleCommandColor(lua_State *L) {
-    LuaSkin *skin      = [LuaSkin shared];
+    LuaSkin *skin      = [LuaSkin sharedWithState:L];
     //NSTextView *output = [MJConsoleWindowController singleton].outputView;
 
     if (lua_type(L, 1) != LUA_TNONE) {
@@ -145,16 +145,16 @@ static int console_consoleCommandColor(lua_State *L) {
 /// Get or set the color that function results displayed in the Hammerspoon console are displayed with.
 ///
 /// Parameters:
-/// * color - an optional table containing color keys as described in `hs.drawing.color`
+///  * color - an optional table containing color keys as described in `hs.drawing.color`
 ///
 /// Returns:
-/// * the current color setting as a table
+///  * the current color setting as a table
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 ///  * Note this only affects future output -- anything already in the console will remain its current color.
 static int console_consoleResultColor(lua_State *L) {
-    LuaSkin *skin      = [LuaSkin shared];
+    LuaSkin *skin      = [LuaSkin sharedWithState:L];
     //NSTextView *output = [MJConsoleWindowController singleton].outputView;
 
     if (lua_type(L, 1) != LUA_TNONE) {
@@ -176,7 +176,7 @@ static int console_consoleResultColor(lua_State *L) {
 /// Returns:
 ///  * an hs.window object
 static int console_asWindow(lua_State *L) {
-    LuaSkin *skin     = [LuaSkin shared];
+    LuaSkin *skin     = [LuaSkin sharedWithState:L];
     NSWindow *console = [[MJConsoleWindowController singleton] window];
 
     CGWindowID windowID = (CGWindowID)[console windowNumber];
@@ -192,15 +192,15 @@ static int console_asWindow(lua_State *L) {
 /// Get or set the color for the background of the Hammerspoon Console's window.
 ///
 /// Parameters:
-/// * color - an optional table containing color keys as described in `hs.drawing.color`
+///  * color - an optional table containing color keys as described in `hs.drawing.color`
 ///
 /// Returns:
-/// * the current color setting as a table
+///  * the current color setting as a table
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 static int console_backgroundColor(lua_State *L) {
-    LuaSkin *skin     = [LuaSkin shared];
+    LuaSkin *skin     = [LuaSkin sharedWithState:L];
     NSWindow *console = [[MJConsoleWindowController singleton] window];
 
     if (lua_type(L, 1) != LUA_TNONE) {
@@ -217,15 +217,15 @@ static int console_backgroundColor(lua_State *L) {
 /// Get or set the color for the background of the Hammerspoon Console's output view.
 ///
 /// Parameters:
-/// * color - an optional table containing color keys as described in `hs.drawing.color`
+///  * color - an optional table containing color keys as described in `hs.drawing.color`
 ///
 /// Returns:
-/// * the current color setting as a table
+///  * the current color setting as a table
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 static int console_outputBackgroundColor(lua_State *L) {
-    LuaSkin *skin      = [LuaSkin shared];
+    LuaSkin *skin      = [LuaSkin sharedWithState:L];
     NSTextView *output = [MJConsoleWindowController singleton].outputView;
 
     if (lua_type(L, 1) != LUA_TNONE) {
@@ -242,15 +242,15 @@ static int console_outputBackgroundColor(lua_State *L) {
 /// Get or set the color for the background of the Hammerspoon Console's input field.
 ///
 /// Parameters:
-/// * color - an optional table containing color keys as described in `hs.drawing.color`
+///  * color - an optional table containing color keys as described in `hs.drawing.color`
 ///
 /// Returns:
-/// * the current color setting as a table
+///  * the current color setting as a table
 ///
 /// Notes:
 ///  * See the `hs.drawing.color` entry in the Dash documentation, or type `help.hs.drawing.color` in the Hammerspoon console to get more information on how to specify a color.
 static int console_inputBackgroundColor(lua_State *L) {
-    LuaSkin *skin      = [LuaSkin shared];
+    LuaSkin *skin      = [LuaSkin sharedWithState:L];
     NSTextField *input = [MJConsoleWindowController singleton].inputField;
 
     if (lua_type(L, 1) != LUA_TNONE) {
@@ -294,8 +294,8 @@ static int console_smartInsertDeleteEnabled(lua_State *L) {
 ///
 /// Returns:
 ///  * an array containing the history of commands entered into the Hammerspoon console.
-static int console_getHistory(__unused lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+static int console_getHistory(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
     MJConsoleWindowController *console = [MJConsoleWindowController singleton];
 
@@ -316,7 +316,7 @@ static int console_getHistory(__unused lua_State *L) {
 /// Notes:
 ///  * You can specify the console content as a string or as an `hs.styledtext` object in either userdata or table format.
 static int console_setConsole(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TANY | LS_TOPTIONAL, LS_TBREAK];
     MJConsoleWindowController *console = [MJConsoleWindowController singleton];
 
@@ -357,7 +357,7 @@ static int console_setConsole(lua_State *L) {
 /// Notes:
 ///  * If the text of the console is retrieved as a string, no color or style information in the console output is retrieved - only the raw text.
 static int console_getConsole(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK];
     MJConsoleWindowController *console = [MJConsoleWindowController singleton];
     BOOL styled                        = lua_isboolean(L, 1) ? (BOOL)lua_toboolean(L, 1) : NO;
@@ -384,7 +384,7 @@ static int console_getConsole(lua_State *L) {
 /// Notes:
 ///  * You can clear the console history by using an empty array (e.g. `hs.console.setHistory({})`
 static int console_setHistory(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TTABLE, LS_TBREAK];
     MJConsoleWindowController *console = [MJConsoleWindowController singleton];
 
@@ -414,7 +414,7 @@ static int console_setHistory(lua_State *L) {
 ///    end
 /// ~~~
 static int console_printStyledText(lua_State *L) {
-    LuaSkin *skin                      = [LuaSkin shared];
+    LuaSkin *skin                      = [LuaSkin sharedWithState:L];
     MJConsoleWindowController *console = [MJConsoleWindowController singleton];
     NSDictionary *consoleAttrs         = @{ NSFontAttributeName: [MJConsoleWindowController singleton].consoleFont,
                                     NSForegroundColorAttributeName: [MJConsoleWindowController singleton].MJColorForStdout };
@@ -458,7 +458,7 @@ static int console_printStyledText(lua_State *L) {
 /// Notes:
 ///  * see the notes for `hs.drawing.windowLevels`
 static int console_level(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TNUMBER | LS_TINTEGER | LS_TOPTIONAL, LS_TBREAK] ;
     NSWindow *console = [[MJConsoleWindowController singleton] window];
 
@@ -487,7 +487,7 @@ static int console_level(lua_State *L) {
 /// Returns:
 ///  * the current, possibly new, value.
 static int console_alpha(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TNUMBER | LS_TOPTIONAL, LS_TBREAK] ;
     NSWindow *console = [[MJConsoleWindowController singleton] window];
 
@@ -512,7 +512,7 @@ static int console_alpha(lua_State *L) {
 /// Notes:
 ///  * Window behaviors determine how the webview object is handled by Spaces and Exposé. See `hs.drawing.windowBehaviors` for more information.
 static int console_behavior(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TNUMBER | LS_TOPTIONAL,
                     LS_TBREAK] ;
 
@@ -549,7 +549,7 @@ static int console_behavior(lua_State *L) {
 ///
 ///  * If a toolbar is attached to the console, you can achieve the same effect as this function with `hs.console.toolbar():inTitleBar(boolean)`
 static int console_titleVisibility(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TSTRING | LS_TOPTIONAL, LS_TBREAK] ;
     NSWindow *console = [[MJConsoleWindowController singleton] window];
     NSDictionary *mapping = @{
@@ -618,9 +618,9 @@ static const luaL_Reg extrasLib[] = {
 //     {NULL,   NULL}
 // };
 
-int luaopen_hs_console_internal(__unused lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
-    refTable      = [skin registerLibrary:extrasLib metaFunctions:nil];
+int luaopen_hs_console_internal(lua_State *L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    refTable      = [skin registerLibrary:"hs.console" functions:extrasLib metaFunctions:nil];
 
     return 1;
 }

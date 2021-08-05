@@ -1,9 +1,10 @@
 #!/bin/bash
 
-if [ "$1" == "" ]; then
-    echo "Usage: $0 VERSION"
-    exit 1
+NIGHTLY=0
+if [ "$1" == "--nightly" ]; then
+    NIGHTLY=1
 fi
+export NIGHTLY
 
 set -eu
 set -o pipefail
@@ -15,7 +16,15 @@ if [ "$(which greadlink)" == "" ]; then
 fi
 
 # Store some variables for later
-export VERSION="$1"
+VERSION_GITOPTS=""
+if [ "$NIGHTLY" == "0" ]; then
+    VERSION_GITOPTS="--abbrev=0"
+fi
+VERSION="$(git describe $VERSION_GITOPTS)"
+export VERSION
+
+echo "Building $VERSION (isNightly: $NIGHTLY)"
+
 export CWD=$PWD
 export SCRIPT_NAME
 export SCRIPT_HOME
@@ -27,12 +36,19 @@ SCRIPT_HOME="$(dirname "$(greadlink -f "$0")")"
 HAMMERSPOON_HOME="$(greadlink -f "${SCRIPT_HOME}/../")"
 XCODE_BUILT_PRODUCTS_DIR="$(xcodebuild -workspace Hammerspoon.xcworkspace -scheme 'Release' -configuration 'Release' -showBuildSettings | sort | uniq | grep ' BUILT_PRODUCTS_DIR =' | awk '{ print $3 }')"
 
-export CODESIGN_AUTHORITY_TOKEN_FILE="${HAMMERSPOON_HOME}/../token-codesign-authority"
-export GITHUB_TOKEN_FILE="${HAMMERSPOON_HOME}/../token-github-release"
+export TOKENPATH
+TOKENPATH="${HAMMERSPOON_HOME}/.."
+if [ -d ~/Desktop/hammerspoon-tokens ]; then
+  TOKENPATH="~/Desktop/hammerspoon-tokens"
+fi
+
+export CODESIGN_AUTHORITY_TOKEN_FILE="${TOKENPATH}/token-codesign-authority"
+export GITHUB_TOKEN_FILE="${TOKENPATH}/token-github-release"
 export GITHUB_USER="hammerspoon"
 export GITHUB_REPO="hammerspoon"
-export FABRIC_TOKEN_FILE="${HAMMERSPOON_HOME}/../token-crashlytics"
-export NOTARIZATION_TOKEN_FILE="${HAMMERSPOON_HOME}/../token-notarization"
+export SENTRY_TOKEN_API_FILE="${TOKENPATH}/token-sentry-api"
+export SENTRY_TOKEN_AUTH_FILE="${TOKENPATH}/token-sentry-auth"
+export NOTARIZATION_TOKEN_FILE="${TOKENPATH}/token-notarization"
 
 # Import our function library
 # shellcheck source=scripts/librelease.sh disable=SC1091
@@ -42,11 +58,13 @@ assert
 build
 validate
 notarize
-localtest
 prepare_upload
 archive
-upload
-announce
+if [ "$NIGHTLY" == "0" ]; then
+  localtest
+  upload
+  announce
+fi
 
 echo "Appcast zip length is: ${ZIPLEN}"
 

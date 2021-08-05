@@ -16,6 +16,7 @@
 typedef struct _audiodevice_watcher_t {
     int callback;
     BOOL running;
+    LSGCCanary lsCanary;
 } audiodevice_watcher;
 
 const AudioObjectPropertySelector watchSelectors[] = {
@@ -25,7 +26,7 @@ const AudioObjectPropertySelector watchSelectors[] = {
     kAudioHardwarePropertyDefaultSystemOutputDevice,
 };
 
-static int refTable;
+static LSRefTable refTable;
 static audiodevice_watcher *theWatcher = nil;
 
 #pragma mark - Function definitions
@@ -45,12 +46,18 @@ OSStatus audiodevicewatcher_callback(AudioDeviceID deviceID, UInt32 numAddresses
     dispatch_async(dispatch_get_main_queue(), ^{
 
         //NSLog(@"%i addresses to check", numAddresses);
-        LuaSkin *skin = [LuaSkin shared];
-        _lua_stackguard_entry(skin.L);
+        LuaSkin *skin = [LuaSkin sharedWithState:NULL];
+
         if (!theWatcher) {
             [skin logWarn:@"hs.audiodevice.watcher callback fired, but theWatcher is nil. This is a bug"];
             return;
         }
+
+        if (![skin checkGCCanary:theWatcher->lsCanary]) {
+            return;
+        }
+        _lua_stackguard_entry(skin.L);
+
         if (theWatcher->callback == LUA_NOREF) {
             [skin logWarn:@"hs.audiodevice.watcher callback fired, but there is no callback. This is a bug"];
         } else {
@@ -88,7 +95,7 @@ OSStatus audiodevicewatcher_callback(AudioDeviceID deviceID, UInt32 numAddresses
 ///  * The callback will be called for each individual audio device event received from the OS, so you may receive multiple events for a single physical action (e.g. unplugging the default audio device will cause `dOut` and `dev#` events, and possibly `sOut` too)
 ///  * Passing nil will cause the watcher to stop if it is already running
 static int audiodevicewatcher_setCallback(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TFUNCTION|LS_TNIL, LS_TBREAK];
 
     if (!theWatcher) {
@@ -96,6 +103,7 @@ static int audiodevicewatcher_setCallback(lua_State *L) {
         memset(theWatcher, 0, sizeof(audiodevice_watcher));
         theWatcher->running = NO;
         theWatcher->callback = LUA_NOREF;
+        theWatcher->lsCanary = [skin createGCCanary];
     }
 
     theWatcher->callback = [skin luaUnref:refTable ref:theWatcher->callback];
@@ -127,7 +135,7 @@ static int audiodevicewatcher_setCallback(lua_State *L) {
 /// Returns:
 ///  * None
 static int audiodevicewatcher_start(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     if (!theWatcher || theWatcher->callback == LUA_NOREF) {
         [skin logError:@"You must call hs.audiodevice.watcher.setCallback() before hs.audiodevice.watcher.start()"];
         return 0;
@@ -197,7 +205,7 @@ static int audiodevicewatcher_stop(lua_State *L) {
 /// Returns:
 ///  * A boolean, true if the watcher is running, false if not
 static int audiodevicewatcher_isRunning(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TBREAK];
 
     if (!theWatcher) {
@@ -210,11 +218,12 @@ static int audiodevicewatcher_isRunning(lua_State *L) {
 }
 
 static int audiodevicewatcher_gc(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     if (theWatcher) {
         audiodevicewatcher_stop(L);
         theWatcher->callback = [skin luaUnref:refTable ref:theWatcher->callback];
+        [skin destroyGCCanary:&(theWatcher->lsCanary)];
         free(theWatcher);
         theWatcher = nil;
     }
@@ -241,7 +250,7 @@ static const luaL_Reg metaLib[] = {
 };
 
 int luaopen_hs_audiodevice_watcher(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
-    refTable = [skin registerLibrary:audiodevicewatcherLib metaFunctions:metaLib];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
+    refTable = [skin registerLibrary:"hs.audiodevice.watcher" functions:audiodevicewatcherLib metaFunctions:metaLib];
     return 1;
 }

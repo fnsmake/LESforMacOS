@@ -15,7 +15,7 @@
 #include "plaintext.h"
 #include "houdini.h"
 
-static int refTable = LUA_NOREF;
+static LSRefTable refTable = LUA_NOREF;
 
 typedef enum {
     GFM,
@@ -191,7 +191,7 @@ static void ghmd__init_plaintext(void)
 ///   * HARD_WRAP     - line breaks are replaced with <br> entities
 ///   * SPACE_HEADERS - require a space between the `#` and the name of a header (prevents collisions with the Issues filter)
 static int to_html(lua_State *L) {
-    LuaSkin *skin = [LuaSkin shared] ;
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
     [skin checkArgs:LS_TSTRING, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK] ;
     ModeType mode = GFM ;
     if (lua_gettop(L) == 2) {
@@ -245,9 +245,9 @@ static luaL_Reg moduleLib[] = {
     {NULL, NULL}
 };
 
-int luaopen_hs_doc_markdown(lua_State* __unused L) {
-    LuaSkin *skin = [LuaSkin shared] ;
-    refTable = [skin registerLibrary:moduleLib metaFunctions:nil] ;
+int luaopen_hs_doc_markdown(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L] ;
+    refTable = [skin registerLibrary:"hs.doc.markdown" functions:moduleLib metaFunctions:nil] ;
 
     ghmd__init_md();
     ghmd__init_gfm();

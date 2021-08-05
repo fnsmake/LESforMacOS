@@ -15,7 +15,7 @@ $(APPFILE): PRODUCT_DIR = $(shell xcodebuild -workspace Hammerspoon.xcworkspace 
 $(APPFILE): build $(shell find Hammerspoon -type f)
 	echo "Building Hammerspoon in $(CONFIGURATION) configuration"
 	rm -rf $@
-	xcodebuild -workspace Hammerspoon.xcworkspace -scheme $(SCHEME) -configuration $(CONFIGURATION) clean build > build/$(CONFIGURATION)-build.log
+	xcodebuild -workspace Hammerspoon.xcworkspace -scheme $(SCHEME) -configuration $(CONFIGURATION) clean build | tee build/$(CONFIGURATION)-build.log | xcpretty -f `xcpretty-actions-formatter`
 	cp -R ${PRODUCT_DIR}/Hammerspoon.app $@
 	cp -R ${PRODUCT_DIR}/Hammerspoon.app.dSYM build/
 	cp -R ${PRODUCT_DIR}/LuaSkin.framework.dSYM build/
@@ -50,6 +50,9 @@ build/docs.sqlite: build/docs.json
 
 build/docs.json: build
 	scripts/docs/bin/build_docs.py -o build/ --json $(DOCS_SEARCH_DIRS)
+
+doclint: build
+	scripts/docs/bin/build_docs.py -o build -l $(DOCS_SEARCH_DIRS)
 
 build:
 	mkdir -p build

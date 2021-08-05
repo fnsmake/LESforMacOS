@@ -49,12 +49,12 @@
         NSError *fileError;
         BOOL success = NO;
         BOOL upgrade = NO;
-        NSString *spoonPath = [MJConfigDir() stringByAppendingPathComponent:@"Spoons"];
+        NSString *spoonPath = [MJConfigDirAbsolute() stringByAppendingPathComponent:@"Spoons"];
         NSString *spoonName = [fileAndPath lastPathComponent];
         NSString *dstSpoonFullPath = [spoonPath stringByAppendingPathComponent:spoonName];
 
         if ([dstSpoonFullPath isEqualToString:fileAndPath]) {
-            NSLog(@"User double clicked on a Spoon in %@, skipping", MJConfigDir());
+            NSLog(@"User double clicked on a Spoon in %@, skipping", MJConfigDirAbsolute());
             return YES;
         }
 
@@ -106,8 +106,8 @@
         if (!self.openFileDelegate) {
             self.startupFile = fileAndPath;
         } else {
-            if ([self.openFileDelegate respondsToSelector:@selector(callbackWithURL:)]) {
-                [self.openFileDelegate callbackWithURL:fileAndPath];
+            if ([self.openFileDelegate respondsToSelector:@selector(callbackWithURL:senderPID:)]) {
+                [self.openFileDelegate callbackWithURL:fileAndPath senderPID:-1];
             }
         }
     } else {
@@ -188,7 +188,7 @@
         if (userMJConfigFile) MJConfigFile = userMJConfigFile ;
 
         // Ensure we have a Spoons directory
-        NSString *spoonsPath = [MJConfigDir() stringByAppendingPathComponent:@"Spoons"];
+        NSString *spoonsPath = [MJConfigDirAbsolute() stringByAppendingPathComponent:@"Spoons"];
         NSFileManager *fileManager = [NSFileManager defaultManager];
         BOOL spoonsPathIsDir;
         BOOL spoonsPathExists = [fileManager fileExistsAtPath:spoonsPath isDirectory:&spoonsPathIsDir];
@@ -214,12 +214,23 @@
 
     [self registerDefaultDefaults];
 
-    // Enable Crashlytics, if we have an API key available
-#ifdef CRASHLYTICS_API_KEY
+    // Enable Sentry, if we have an API URL available
+#ifdef SENTRY_API_URL
     if (HSUploadCrashData() && !isTesting) {
-        Crashlytics *crashlytics = [Crashlytics sharedInstance];
-        crashlytics.debugMode = YES;
-        [Crashlytics startWithAPIKey:[NSString stringWithUTF8String:CRASHLYTICS_API_KEY] delegate:self];
+        SentryEvent* (^sentryWillUploadCrashReport) (SentryEvent *event) = ^SentryEvent* (SentryEvent *event) {
+            if ([event.extra objectForKey:@"MjolnirModuleLoaded"]) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                   [self showMjolnirMigrationNotification];
+                });
+            }
+            return event;
+        };
+
+        [SentrySDK startWithOptions:@{
+            @"dsn": @SENTRY_API_URL,
+            @"beforeSend": sentryWillUploadCrashReport,
+            @"release": [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"]
+        }];
     }
 #endif
 
@@ -310,7 +321,7 @@
     @try {
         [[NSApplication sharedApplication] orderFrontStandardAboutPanel: nil];
     } @catch (NSException *exception) {
-        [[LuaSkin shared] logError:@"Unable to open About dialog. This may mean your Hammerspoon installation is corrupt. Please re-install it!"];
+        [LuaSkin logError:@"Unable to open About dialog. This may mean your Hammerspoon installation is corrupt. Please re-install it!"];
     }
 }
 
@@ -341,20 +352,6 @@
     [alert setInformativeText:@"Your init.lua is loading Mjolnir modules and a previous launch crashed.\n\nHammerspoon ships with updated versions of many of the Mjolnir modules, with both new features and many bug fixes.\n\nPlease consult our API documentation and migrate your config."];
     [alert setAlertStyle:NSAlertStyleCritical];
     [alert runModal];
-}
-
-- (void)crashlyticsDidDetectReportForLastExecution:(CLSReport *)report completionHandler:(void (^)(BOOL submit))completionHandler {
-    BOOL showMjolnirMigrationDialog = NO;
-
-    if ([report.customKeys objectForKey:@"MjolnirModuleLoaded"]) {
-        showMjolnirMigrationDialog = YES;
-    }
-
-    completionHandler(YES);
-
-    if (showMjolnirMigrationDialog) {
-        [self showMjolnirMigrationNotification];
-    }
 }
 
 #pragma mark - Sparkle delegate methods

@@ -1,12 +1,16 @@
 require("hs.timer")
 
 function testAllWindows()
+  hs.openConsole()
+  hs.openPreferences()
   local allWindows = hs.window.allWindows()
   assertIsEqual("table", type(allWindows))
   assertGreaterThan(1, #allWindows)
   -- Enable this when hs.window objects have a proper __type metatable entry
   -- assertIsUserdataOfType(allWindows[1], "hs.window")
 
+  hs.closePreferences()
+  hs.closeConsole()
   return success()
 end
 
@@ -19,8 +23,22 @@ end
 
 function testOrderedWindows()
   hs.openConsole() -- Make sure we have at least one window
+  hs.openPreferences()
+
+  hs.application.launchOrFocus("Activity Monitor.app")
+  hs.application.launchOrFocus("System Information.app")
   local orderedWindows = hs.window.orderedWindows()
   assertIsEqual("table", type(orderedWindows))
+  --assertIsEqual(hs.inspect(orderedWindows) .. " :: " .. hs.inspect(hs.window.visibleWindows()) .. " :: " .. hs.inspect(hs.window._orderedwinids()), "lol")
+  hs.timer.usleep(500000)
+  local activityMonitor = hs.application.get("Activity Monitor")
+  if (activityMonitor) then
+    activityMonitor:kill()
+  end
+  local systemInformation = hs.application.get("System Information")
+  if (systemInformation) then
+    systemInformation:kill()
+  end
   assertGreaterThan(1, #orderedWindows)
   return success()
 end
@@ -28,7 +46,7 @@ end
 function testFocusedWindow()
   hs.openConsole()
   local win = hs.window.focusedWindow()
-  assertIsUserdataOfType("hs.window", win) -- This will fail right now, because hs.window doesn't have a __type metatable entry
+  assertIsUserdataOfType("hs.window", win)
   return success()
 end
 
@@ -70,21 +88,24 @@ function testTopLeft()
   local topLeftNew = hs.geometry.point(topLeftOrig.x + 1, topLeftOrig.y + 1)
   win:setTopLeft(topLeftNew)
   topLeftNew = win:topLeft()
-  assertTrue(topLeftNew.x == topLeftOrig.x + 1)
-  assertTrue(topLeftNew.y == topLeftOrig.y + 1)
+  assertIsEqual(topLeftNew.x, topLeftOrig.x + 1)
+  assertIsEqual(topLeftNew.y, topLeftOrig.y + 1)
   return success()
 end
 
 function testSize()
   hs.openConsole()
   local win = hs.window.focusedWindow()
+  win:setSize(hs.geometry.size(500, 600))
   local sizeOrig = win:size()
   assertIsTable(sizeOrig)
-  local sizeNew = hs.geometry.size(sizeOrig.w + 1, sizeOrig.h + 1)
+  assertIsEqual(500, sizeOrig.w)
+  assertIsEqual(600, sizeOrig.h)
+  local sizeNew = hs.geometry.size(sizeOrig.w + 5, sizeOrig.h + 5)
   win:setSize(sizeNew)
   sizeNew = win:size()
-  assertTrue(sizeNew.w == sizeOrig.w + 1)
-  assertTrue(sizeNew.h == sizeOrig.h + 1)
+  assertIsEqual(sizeNew.w, sizeOrig.w + 5)
+  assertIsEqual(sizeNew.h, sizeOrig.h + 5)
   return success()
 end
 
@@ -119,7 +140,8 @@ function testTabs()
   -- First test tabs on a window that doesn't have tabs
   hs.openConsole()
   local win = hs.window.focusedWindow()
-  assertIsNil(win:tabCount())
+  assertIsUserdata(win)
+  assertIsEqual(0, win:tabCount())
 
   -- Now test an app with tabs
   local safari = hs.application.open("Safari", 5, true)
@@ -129,6 +151,8 @@ function testTabs()
   hs.urlevent.openURLWithBundle("http://developer.apple.com", "com.apple.Safari")
 
   local safariWin = safari:mainWindow()
+  assertIsUserdata(safariWin)
+
   local tabCount = safariWin:tabCount()
   assertGreaterThan(1, tabCount)
 
@@ -168,7 +192,7 @@ function testFullscreenOneSetup()
 
   win:setFullScreen(true)
 
-  --return success()
+  return success()
 end
 
 function testFullscreenOneResult()

@@ -191,8 +191,7 @@ end
 ---
 --- Parameters:
 ---  * exitedCallback - (optional) a function that will be called after the user dismisses the modal interface
----  * multipleWindows - (optional) if `true`, the resizing grid won't automatically go away after selecting the desired cells
----    for the frontmost window; instead, it'll switch to the next window
+---  * multipleWindows - (optional) if `true`, the resizing grid won't automatically go away after selecting the desired cells for the frontmost window; instead, it'll switch to the next window
 ---
 --- Returns:
 ---  * None
@@ -223,7 +222,9 @@ end
 --- Function
 --- Toggles the grid and modal resizing mode - see `hs.grid.show()` and `hs.grid.hide()`
 ---
---- Parameters: see `hs.grid.show()`
+--- Parameters:
+---  * exitedCallback - (optional) a function that will be called after the user dismisses the modal interface
+---  * multipleWindows - (optional) if `true`, the resizing grid won't automatically go away after selecting the desired cells for the frontmost window; instead, it'll switch to the next window
 ---
 --- Returns:
 ---  * None
@@ -244,10 +245,10 @@ end
 --- Gets the cell describing a window
 ---
 --- Parameters:
---- * an `hs.window` object to get the cell of
+---  * an `hs.window` object to get the cell of
 ---
 --- Returns:
---- * a cell object (i.e. an `hs.geometry` rect), or nil if an error occurred
+---  * a cell object (i.e. an `hs.geometry` rect), or nil if an error occurred
 function grid.get(win)
   local winframe = win:frame()
   local winscreen = win:screen()
@@ -299,7 +300,7 @@ end
 ---  * win - an `hs.window` object representing the window to operate on
 ---  * cell - a cell object, i.e. an `hs.geometry` rect or argument to construct one, to apply to the window
 ---  * screen - (optional) an `hs.screen` object or argument to `hs.screen.find()` representing the screen to place the window on; if omitted
----             the window's current screen will be used
+---    the window's current screen will be used
 ---
 --- Returns:
 ---  * the `hs.grid` module for method chaining

@@ -35,7 +35,7 @@ This is possible because of two things:
 
 ## Where do I get Spoons from?
 
-The official repository of Spoons is [http://www.hammerspoon.org/Spoons](http://www.hammerspoon.org/Spoons) (the source for which can be found at [https://github.com/Hammerspoon/Spoons](https://github.com/Hammerspoon/Spoons)), but authors may choose to distribute them separately from their own sites.
+The official repository of Spoons is [https://www.hammerspoon.org/Spoons](https://www.hammerspoon.org/Spoons) (the source for which can be found at [https://github.com/Hammerspoon/Spoons](https://github.com/Hammerspoon/Spoons)), but authors may choose to distribute them separately from their own sites.
 
 ## How do I install a Spoon?
 
@@ -48,7 +48,18 @@ Hopefully the Spoon came with some documentation, either on its homepage or in `
 
 ### Loading a Spoon
 
-For most Spoons, simply add `hs.loadSpoon(NAME)` to your Hammerspoon config (note that `NAME` should *not* include the `.spoon` extension). This will make the spoon available in the global Lua namespace as `spoon.NAME`.
+For most Spoons, simply add `hs.loadSpoon("NAME")` to your Hammerspoon config (note that `NAME` should *not* include the `.spoon` extension). This will make the spoon available in the global Lua namespace as `spoon.NAME`.
+
+After loading a Spoon, you are responsible for calling its `start()` method if it has one before using it.
+
+Note that `hs.loadSpoon()` uses `package.path` to find Spoons. Hence you can have it look for Spoons in other paths by adding those paths to `package.path` as follows:
+
+```lua
+-- Look for Spoons in ~/.hammerspoon/MySpoons as well
+package.path = package.path .. ";" ..  hs.configdir .. "/MySpoons/?.spoon/init.lua"
+```
+
+This can be useful if you have Spoons you are developing for example.
 
 ### Integrating into your configuration
 
@@ -120,13 +131,13 @@ If your Spoon provides some kind of background activity, e.g. timers, watchers, 
 #### Hotkeys
 
 If your Spoon provides actions that a user can map to hotkeys, you should expose a `:bindHotKeys()` method. The method should accept a single parameter, which is a table.
-The keys of the table should be strings that describe the action performed by the hotkeys, and the values of the table should be tables containing modifiers and keynames/keycodes.
+The keys of the table should be strings that describe the action performed by the hotkeys, and the values of the table should be tables containing modifiers and keynames/keycodes and, optionally, a message to be displayed via `hs.alert()` when the hotkey has been triggered.
 
 For example, if the user wants to map two of your actions, `show` and `hide`, they would pass in:
 
 ```lua
   {
-    show={{"cmd", "alt"}, "s"},
+    show={{"cmd", "alt"}, "s", message="Show"},
     hide={{"cmd", "alt"}, "h"}
   }
 ```
@@ -134,6 +145,19 @@ For example, if the user wants to map two of your actions, `show` and `hide`, th
 Your `:bindHotkeys()` method now has all of the information it needs to bind hotkeys to its methods.
 
 While you might want to verify the contents of the table, it seems reasonable to be fairly limited in the extent, so long as you have documented the method well.
+
+The function `hs.spoons.bindHotkeysToSpec()` can do most of the hard work of the mappings for you. For exmaple, the following would allow binding of actions `show` and `hide` to `showMethod()` and `hideMethod()` respectively:
+
+```lua
+function MySpoon:bindHotKeys(mapping)
+  local spec = {
+    show = hs.fnutils.partial(self.showMethod, self),
+    hide = hs.fnutils.partial(self.hideMethod, self),
+  }
+  hs.spoons.bindHotkeysToSpec(spec, mapping)
+  return self
+end
+```
 
 #### Other
 
@@ -164,7 +188,7 @@ By convention in Hammerspoon, methods tend to return the object they belong to (
 #### Generating
 
 Several tools are able to operate on the docstrings used by Hammerspoon and Spoons. In the simplest case, each Spoon should include a `docs.json` file which is little more than the various docstrings collected together.
-This file can be generated using the Hammerspoon command line tool (see [http://www.hammerspoon.org/docs/hs.ipc.html#cliInstall](http://www.hammerspoon.org/docs/hs.ipc.html#cliInstall)):
+This file can be generated using the Hammerspoon command line tool (see [https://www.hammerspoon.org/docs/hs.ipc.html#cliInstall](https://www.hammerspoon.org/docs/hs.ipc.html#cliInstall)):
 
 ```bash
 cd /path/too/your/Spoon
@@ -189,33 +213,28 @@ This will search the current working director for any `.lua` files, extract docs
 
 If your Spoon grows more complex than just an `init.lua`, a problem you will quickly run into is how you can load extra `.lua` files, or other types of resources (e.g. images).
 
-There is, however, a simple way to discover the true path of your Spoon on the filesystem. Simply include this code in your Spoon:
+There is, however, a simple way to discover the true path of your Spoon on the filesystem. Simply use the `hs.spoons.scriptPath()` function:
 
 ```lua
--- Internal function used to find our location, so we know where to load files from
-local function script_path()
-    local str = debug.getinfo(2, "S").source:sub(2)
-    return str:match("(.*/)")
-end
-obj.spoonPath = script_path()
+-- Get path to Spoon's init.lua script
+obj.spoonPath = hs.spoons.scriptPath()
 ```
+#### Assets
 
-Assuming you have been building your Spoon object as `obj`, you can now reference `obj.spoonPath` anywhere in your methods, and know where you should load files from.
+To access assets bundled with your Spoon, use the `hs.spoons.resourcePath()` function:
+
+```lua
+
+-- Get path to a resource bundled with the Spoon
+obj.imagePath = hs.spoons.resourcePath("images/someImage.png")
+```
 
 #### Code
 
 You cannot use `require()` to load `.lua` files in a Spoon, instead you should use:
 
 ```lua
-dofile(obj.spoonPath.."/someCode.lua")
+dofile(hs.spoons.resourcePath("someCode.lua"))
 ```
 
 and the `someCode.lua` file will be loaded and executed (and if it returns anything, you can capture those values from `dofile()`)
-
-#### Assets
-
-Once you have `spoonPath` available in your object, any normal Lua/Hammerspoon/etc. methods for loading files, should work, e.g.:
-
-```lua
-hs.image.imageFromPath(self.spoonPath.."/someImage.png")
-```

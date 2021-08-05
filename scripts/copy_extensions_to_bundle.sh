@@ -5,6 +5,7 @@ export HS_RESOURCES="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
 export HS_DST="${HS_RESOURCES}/extensions/hs"
 export HS_MODULES="application \
     audiodevice \
+    axuielement \
     base64 \
     battery \
     bonjour \
@@ -45,6 +46,7 @@ export HS_MODULES="application \
     plist \
     screen \
     settings \
+    serial \
     sharing \
     socket \
     sound \
@@ -57,6 +59,7 @@ export HS_MODULES="application \
     uielement \
     urlevent \
     usb \
+    websocket \
     webview \
     wifi \
     window"
@@ -64,8 +67,10 @@ export HS_WATCHERS="application \
     audiodevice \
     battery \
     caffeinate \
+    pasteboard \
     screen \
     spaces \
+    uielement \
     usb \
     wifi"
 export HS_LUAONLY="_coresetup \

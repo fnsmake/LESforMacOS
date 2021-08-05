@@ -7,13 +7,38 @@
 return {setup=function(...)
 
   local modpath, prettypath, fullpath, configdir, docstringspath, hasinitfile, autoload_extensions = ...
-  local tostring,pack,tconcat,sformat=tostring,table.pack,table.concat,string.format
+  local tostring,pack,tconcat,sformat,tsort=tostring,table.pack,table.concat,string.format,table.sort
+  local traceback = debug.traceback
+
+  -- define hs.printf before requiring anything because it's used by some of the modules
+  -- for logging and console messages.
+
+--- hs.printf(format, ...)
+--- Function
+--- Prints formatted strings to the Console
+---
+--- Parameters:
+---  * format - A format string
+---  * ... - Zero or more arguments to fill the placeholders in the format string
+---
+--- Returns:
+---  * None
+---
+--- Notes:
+---  * This is a simple wrapper around the Lua code `print(string.format(...))`.
+  function hs.printf(fmt,...) return print(sformat(fmt,...)) end -- luacheck: ignore
+
+  -- load these first so logs can be captured and randomizer can be seeded
   local crashLog = require("hs.crash").crashLog
-  local fnutils = require("hs.fnutils")
   local hsmath = require("hs.math")
 
   -- seed RNG before we do anything else
-  math.randomseed(hsmath.randomFloat()*100000000)
+  math.randomseed(math.floor(hsmath.randomFloat()*100000000000000))
+
+  -- now regular require locals for use later on in _coresetup
+  local fnutils = require("hs.fnutils")
+  local host = require("hs.host")
+  local timer = require("hs.timer")
 
   -- setup core functions
 
@@ -80,6 +105,44 @@ hs.relaunch = function()
     os.execute([[ (while ps -p ]]..hs.processInfo.processID..[[ > /dev/null ; do sleep 1 ; done ; open -a "]]..hs.processInfo.bundlePath..[[" ) & ]])
     hs._exit(true, true)
 end
+
+--- hs.coroutineApplicationYield([delay])
+--- Function
+--- Yield coroutine to allow the Hammerspoon application to process other scheduled events and schedule a resume in the event application queue.
+---
+--- Parameters:
+---  * `delay` - an optional number, default `hs.math.minFloat`, specifying the number of seconds from when this function is executed that the `coroutine.resume` should be scheduled for.
+---
+--- Returns:
+---  * None
+---
+--- Notes:
+---  * this function will return an error if invoked outside of a coroutine.
+---  * unlike `coroutine.yield`, this function does not allow the passing of (new) information to or from the coroutine while it is running; this function is to allow long running tasks to yield time to the Hammerspoon application so other timers and scheduled events can occur without requiring the programmer to add code for an explicit resume.
+---
+---  * this function is added to the lua `coroutine` library as `coroutine.applicationYield` as an alternative name.
+local resumeTimers = {}
+
+hs.coroutineApplicationYield = function(delay)
+    delay = delay or hsmath.minFloat
+
+    local thread, isMain = coroutine.running()
+    if not isMain then
+        local uuid = host.uuid()
+        resumeTimers[uuid] = timer.doAfter(delay, function()
+            resumeTimers[uuid] = nil
+            local status, msg = coroutine.resume(thread)
+            if not status then
+                hs.luaSkinLog.ef("hs.coroutineApplicationYield: %s", msg)
+            end
+        end)
+        coroutine.yield()
+    else
+        error("attempt to yield from outside a coroutine", 2)
+    end
+end
+
+coroutine.applicationYield = hs.coroutineApplicationYield
 
 --- hs.docstrings_json_file
 --- Constant
@@ -168,22 +231,6 @@ end
     logmessage(str)
   end
 
---- hs.printf(format, ...)
---- Function
---- Prints formatted strings to the Console
----
---- Parameters:
----  * format - A format string
----  * ... - Zero or more arguments to fill the placeholders in the format string
----
---- Returns:
----  * None
----
---- Notes:
----  * This is a simple wrapper around the Lua code `print(string.format(...))`.
-  function hs.printf(fmt,...) return print(sformat(fmt,...)) end
-
-
 --- hs.execute(command[, with_user_env]) -> output, status, type, rc
 --- Function
 --- Runs a shell command, optionally loading the users shell environment first, and returns stdout as a string, followed by the same result codes as `os.execute` would return.
@@ -249,9 +296,19 @@ end
 --- Notes:
 ---  * Spoons are a way of distributing self-contained units of Lua functionality, for Hammerspoon. For more information, see https://github.com/Hammerspoon/hammerspoon/blob/master/SPOON.md
 ---  * This function will load the Spoon and call its `:init()` method if it has one. If you do not wish this to happen, or wish to use a Spoon that somehow doesn't fit with the behaviours of this function, you can also simply `require('name')` to load the Spoon
+---  * If the Spoon has a `:start()` method you are responsible for calling it before using the functionality of the Spoon.
 ---  * If the Spoon provides documentation, it will be loaded by made available in hs.docs
 ---  * To learn how to distribute your own code as a Spoon, see https://github.com/Hammerspoon/hammerspoon/blob/master/SPOON.md
   hs.loadSpoon = function (name, global)
+    if _G["spoon"] == nil then
+      _G["spoon"] = {}
+    end
+
+    if global ~= false and _G["spoon"][name] ~= nil then
+      print("-- Spoon already loaded, returning existing copy: "..name)
+      return _G["spoon"][name]
+    end
+
     print("-- Loading Spoon: "..name)
     -- Load the Spoon code
     local obj = require(name)
@@ -264,9 +321,6 @@ end
 
       -- If the Spoon is desired to be global, make it so
       if global ~= false then
-        if _G["spoon"] == nil then
-          _G["spoon"] = {}
-        end
         _G["spoon"][name] = obj
       end
 
@@ -555,29 +609,47 @@ end
   end
 
   if not hasinitfile then
-
+    local osascript = require("hs.osascript")
+    local notify = require("hs.notify")
+    local printf = hs.printf
     bundlePath = hs.processInfo["bundlePath"]
     if bundlePath == "/Applications/Live Enhancement Suite.app" then
-      print("hammerspoon is in applications dir")
+      printf("hammerspoon is in applications dir")
     else
-      hs.osascript.applescript([[tell application "System Events" to display dialog "Error: LES is not in the Applications folder." & return & "Please move the LES app to the Applications folder." buttons {"Ok"} default button "Ok" with title "Live Enhancement Suite" with icon POSIX file "/Applications/Live Enhancement Suite.app/Contents/Resources/AppIcon.icns"]])
+      osascript.applescript([[tell application "System Events" to display dialog "Error: LES is not in the Applications folder." & return & "Please move the LES app to the Applications folder." buttons {"Ok"} default button "Ok" with title "Live Enhancement Suite" with icon POSIX file "/Applications/Live Enhancement Suite.app/Contents/Resources/AppIcon.icns"]])
       os.exit()
     end
-    hs.notify.show("Live Enhancement Suite", "Welcome to LES!", "Please wait a moment while we set get things ready...")
+    notify.show("Live Enhancement Suite", "Welcome to LES!", "Please wait a moment while we set get things ready...")
     os.execute([[cp /Applications/Live\ Enhancement\ Suite.app/Contents/Resources/extensions/hs/les/init.lua ~/.les/]])
-    -- hs.notify.register("__noinitfile", function() os.execute("open http://www.hammerspoon.org/go/") end)
-    -- hs.notify.show("Hammerspoon", "No config file found", "Click here for the Getting Started Guide", "__noinitfile")
-    -- hs.printf("-- Can't find %s; create it and reload your config.", prettypath)
+    -- notify.register("__noinitfile", function() os.execute("open https://www.hammerspoon.org/go/") end)
+    -- notify.show("Hammerspoon", "No config file found", "Click here for the Getting Started Guide", "__noinitfile")
+    -- printf("-- Can't find %s; create it and reload your config.", prettypath)
     hs.reload()
     return -- hs.completionsForInputString, runstring
   end
 
   local hscrash = require("hs.crash")
+
+  -- These three modules are so tightly coupled that we will unconditionally preload them
+  require("hs.application.internal")
+  require("hs.uielement")
+  require("hs.window")
+  require("hs.application")
+
   rawrequire = require
   require = function(modulename) -- luacheck: ignore
     local result = rawrequire(modulename)
     pcall(function()
-    hscrash.crashLog("require: "..modulename)
+
+    local loadedModules = {}
+    local n = 0
+    for k,_ in pairs(package.loaded) do
+      n = n + 1
+      loadedModules[n] = k
+    end
+    table.sort(loadedModules)
+    hscrash.crashKV("modules", table.concat(loadedModules, ", "))
+
       --if string.sub(modulename, 1, 3) == "hs." then
       --  -- Reasonably certain that we're dealing with a Hammerspoon extension
       --  local extname = string.sub(modulename, 4, -1)
@@ -587,6 +659,7 @@ end
       --    end
       --  end
       --end
+
       if string.sub(modulename, 1, 8) == "mjolnir." then
         -- Reasonably certain that we're dealing with a Mjolnir module
         local mjolnirmod = string.sub(modulename, 9, -1)

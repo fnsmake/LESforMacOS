@@ -25,10 +25,11 @@
     _L = L;
 }
 
+// VERY IMPORTANT NOTE: DO NOT CALL HSNSLOG() IN THIS METHOD.
 - (void) logForLuaSkinAtLevel:(int)level withMessage:(NSString *)theMessage {
     // If we haven't been given a lua_State object yet, log locally
     if (!_L) {
-        HSNSLOG(@"%@", theMessage);
+        [self logBreadcrumb:@"%@", theMessage];
         return;
     }
 
@@ -37,15 +38,15 @@
     // (because such logs don't need to be shown to the user, just stored in our crashlog in case we crash)
     switch (level) {
         case LS_LOG_BREADCRUMB:
-            HSNSLOG(@"%@", theMessage);
+            [self logBreadcrumb:@"%@", theMessage];
             break;
 
-        // Capture anything that isn't verbose/debug logging, in Crashlytics
+        // Capture anything that isn't verbose/debug logging, in Sentry
         // These intentionally fall through to default.
         case LS_LOG_ERROR:
         case LS_LOG_WARN:
         case LS_LOG_INFO:
-            HSNSLOG(@"%@", theMessage);
+            [self logBreadcrumb:@"%@", theMessage];
         default:
             lua_getglobal(_L, "hs") ; lua_getfield(_L, -1, "handleLogMessage") ; lua_remove(_L, -2) ;
             lua_pushinteger(_L, level) ;
@@ -53,12 +54,43 @@
             int errState = lua_pcall(_L, 2, 0, 0) ;
             if (errState != LUA_OK) {
                 NSArray *stateLabels = @[ @"OK", @"YIELD", @"ERRRUN", @"ERRSYNTAX", @"ERRMEM", @"ERRGCMM", @"ERRERR" ] ;
-                HSNSLOG(@"logForLuaSkin: error, state %@: %s", [stateLabels objectAtIndex:(NSUInteger)errState],
-                        luaL_tolstring(_L, -1, NULL)) ;
+                [self logBreadcrumb:@"logForLuaSkin: error, state %@: %s", [stateLabels objectAtIndex:(NSUInteger)errState],
+                        luaL_tolstring(_L, -1, NULL)] ;
                 lua_pop(_L, 2) ; // lua_pcall error + converted string from luaL_tolstring
             }
             break;
     }
 }
 
+- (void)handleCatastrophe:(NSString *)message {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = message;
+    alert.informativeText = @"Hammerspoon critical error.";
+    [alert addButtonWithTitle:@"Quit"];
+    [alert setAlertStyle:NSAlertStyleCritical];
+    [alert runModal];
+    exit(1);
+}
+
+- (void)logBreadcrumb:(NSString *)format, ... {
+    va_list args;
+    va_start(args, format);
+    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+    NSLog(@"BREADCRUMB: %@", message);
+    SentryBreadcrumb *crumb = [[SentryBreadcrumb alloc] init];
+    crumb.message = message;
+    [SentrySDK addBreadcrumb:crumb];
+}
+
+- (void)logKnownBug:(NSString *)format, ... {
+    va_list args;
+    va_start(args, format);
+    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+    NSLog(@"KNOWN BUG: %@", message);
+
+    SentryEvent *event = [[SentryEvent alloc] initWithLevel:kSentryLevelError];
+    event.message = [[SentryMessage alloc] initWithFormatted:message];
+
+    [SentrySDK captureEvent:event];
+}
 @end

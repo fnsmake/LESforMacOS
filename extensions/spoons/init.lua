@@ -2,7 +2,7 @@
 ---
 --- Utility and management functions for Spoons
 --- Spoons are Lua plugins for Hammerspoon.
---- See http://www.hammerspoon.org/Spoons/ for more information
+--- See https://www.hammerspoon.org/Spoons/ for more information
 
 if _G["spoon"] == nil then
   _G["spoon"] = {}
@@ -37,8 +37,8 @@ local function slurp(path)
    return s
 end
 
---- hs.spoons.newSpoon(name, basedir, metadata) -> string | nil
---- Method
+--- hs.spoons.newSpoon(name, basedir, metadata, [template]) -> string | nil
+--- Function
 --- Create a skeleton for a new Spoon
 ---
 --- Parameters:
@@ -93,7 +93,7 @@ function module.newSpoon(name, basedir, metadata, template)
 end
 
 --- hs.spoons.scriptPath([n]) -> string
---- Method
+--- Function
 --- Return path of the current spoon.
 ---
 --- Parameters:
@@ -108,7 +108,7 @@ function module.scriptPath(n)
 end
 
 --- hs.spoons.resourcePath(partial) -> string
---- Method
+--- Function
 --- Return full path of an object within a spoon directory, given its partial path.
 ---
 --- Parameters:
@@ -121,12 +121,12 @@ function module.resourcePath(partial)
 end
 
 --- hs.spoons.bindHotkeysToSpec(def, map) -> none
---- Method
+--- Function
 --- Map a number of hotkeys according to a definition table
 ---
 --- Parameters:
 ---  * def - table containing name-to-function definitions for the hotkeys supported by the Spoon. Each key is a hotkey name, and its value must be a function that will be called when the hotkey is invoked.
----  * map - table containing name-to-hotkey definitions, as supported by [bindHotkeys in the Spoon API](https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md#hotkeys). Not all the entries in `def` must be bound, but if any keys in `map` don't have a definition, an error will be produced.
+---  * map - table containing name-to-hotkey definitions and an optional message to be displayed via `hs.alert()` when the hotkey has been triggered, as supported by [bindHotkeys in the Spoon API](https://github.com/Hammerspoon/hammerspoon/blob/master/SPOONS.md#hotkeys). Not all the entries in `def` must be bound, but if any keys in `map` don't have a definition, an error will be produced.
 ---
 --- Returns:
 ---  * None
@@ -138,7 +138,7 @@ function module.bindHotkeysToSpec(def,map)
          if module._keys[keypath] then
             module._keys[keypath]:delete()
          end
-         module._keys[keypath]=hotkey.bindSpec(key, def[name])
+         module._keys[keypath]=hotkey.bindSpec(key, key["message"], def[name])
       else
          log.ef("Error: Hotkey requested for undefined action '%s'", name)
       end
@@ -146,7 +146,7 @@ function module.bindHotkeysToSpec(def,map)
 end
 
 --- hs.spoons.list() -> table
---- Method
+--- Function
 --- Return a list of installed/loaded Spoons
 ---
 --- Parameters:
@@ -180,7 +180,7 @@ function module.list(onlyLoaded)
 end
 
 --- hs.spoons.isInstalled(name) -> table | nil
---- Method
+--- Function
 --- Check if a given Spoon is installed.
 ---
 --- Parameters:
@@ -199,7 +199,7 @@ function module.isInstalled(name)
 end
 
 --- hs.spoons.isLoaded(name) -> boolean | nil
---- Method
+--- Function
 --- Check if a given Spoon is loaded.
 ---
 --- Parameters:
@@ -217,8 +217,8 @@ function module.isLoaded(name)
    return nil
 end
 
---- hs.spoons.use(name, arg) -> boolean | nil
---- Method
+--- hs.spoons.use(name, arg, [noerror]) -> boolean | nil
+--- Function
 --- Declaratively load and configure a Spoon
 ---
 --- Parameters:

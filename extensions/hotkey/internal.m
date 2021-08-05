@@ -2,9 +2,6 @@
 #import <Carbon/Carbon.h>
 #import <LuaSkin/LuaSkin.h>
 
-#define USERDATA_TAG "hs.hotkey"
-static int refTable;
-
 @interface HSKeyRepeatManager : NSObject {
     NSTimer *keyRepeatTimer;
     int eventID;
@@ -17,15 +14,33 @@ static int refTable;
 - (void)repeatTimerFired:(NSTimer *)timer;
 @end
 
-static NSMutableIndexSet* handlers;
+#define USERDATA_TAG "hs.hotkey"
+static LSRefTable refTable;
+static EventHandlerRef eventhandler;
+
+static UInt32 monotonicHotkeyCount = 0;
+static NSMutableDictionary<NSNumber*, NSValue*> *hotkeys = nil;
+
 static HSKeyRepeatManager* keyRepeatManager;
 static OSStatus trigger_hotkey_callback(int eventUID, int eventKind, BOOL isRepeat);
+
+typedef struct _hotkey_t {
+    int monotonicID;
+    UInt32 mods;
+    UInt32 keycode;
+    int pressedfn;
+    int releasedfn;
+    int repeatfn;
+    BOOL enabled;
+    EventHotKeyRef carbonHotKey;
+    LSGCCanary lsCanary;
+} hotkey_t;
 
 @implementation HSKeyRepeatManager
 - (void)startTimer:(int)theEventID eventKind:(int)theEventKind {
     //NSLog(@"startTimer");
     if (keyRepeatTimer) {
-        LuaSkin *skin = [LuaSkin shared];
+        LuaSkin *skin = [LuaSkin sharedWithState:NULL];
         [skin logWarn:@"hs.hotkey - startTimer() called while an existing repeat timer is running. Stopping existing timer and refusing to proceed."];
         [self stopTimer];
         return;
@@ -69,41 +84,27 @@ static OSStatus trigger_hotkey_callback(int eventUID, int eventKind, BOOL isRepe
 
 @end
 
-static int store_hotkey(lua_State* L, int idx) {
-    LuaSkin *skin = [LuaSkin shared];
-    lua_pushvalue(L, idx);
-    int x = [skin luaRef:refTable];
-    [handlers addIndex: x];
-    return x;
-}
-
-static int remove_hotkey(lua_State* L, int x) {
-    LuaSkin *skin = [LuaSkin shared];
-    [skin luaUnref:refTable ref:x];
-    [handlers removeIndex: x];
-    return LUA_NOREF;
-}
-
-static void* push_hotkey(lua_State* L, int x) {
-    LuaSkin *skin = [LuaSkin shared];
-    [skin pushLuaRef:refTable ref:x];
-    return lua_touserdata(L, -1);
-}
-
-typedef struct _hotkey_t {
-    UInt32 mods;
-    UInt32 keycode;
-    UInt32 uid;
-    int pressedfn;
-    int releasedfn;
-    int repeatfn;
-    BOOL enabled;
-    EventHotKeyRef carbonHotKey;
-} hotkey_t;
-
+//static int store_hotkey(lua_State* L, int idx) {
+//    LuaSkin *skin = [LuaSkin sharedWithState:L];
+//    lua_pushvalue(L, idx);
+//    int x = [skin luaRef:refTable];
+//    return x;
+//}
+//
+//static int remove_hotkey(lua_State* L, int x) {
+//    LuaSkin *skin = [LuaSkin sharedWithState:L];
+//    [skin luaUnref:refTable ref:x];
+//    return LUA_NOREF;
+//}
+//
+//static void* push_hotkey(lua_State* L, int x) {
+//    LuaSkin *skin = [LuaSkin sharedWithState:L];
+//    [skin pushLuaRef:refTable ref:x];
+//    return lua_touserdata(L, -1);
+//}
 
 static int hotkey_new(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     luaL_checktype(L, 1, LUA_TTABLE);
     UInt32 keycode = (UInt32)luaL_checkinteger(L, 2);
@@ -133,6 +134,13 @@ static int hotkey_new(lua_State* L) {
 
     hotkey_t* hotkey = lua_newuserdata(L, sizeof(hotkey_t));
     memset(hotkey, 0, sizeof(hotkey_t));
+
+    UInt32 uid = monotonicHotkeyCount;
+    monotonicHotkeyCount++;
+    hotkey->monotonicID = uid;
+
+    hotkey->lsCanary =  [skin createGCCanary];
+    [hotkeys setObject:[NSValue valueWithPointer:hotkey] forKey:[NSNumber numberWithUnsignedInt:hotkey->monotonicID]];
 
     hotkey->carbonHotKey = nil;
     hotkey->keycode = keycode;
@@ -180,7 +188,7 @@ static int hotkey_new(lua_State* L) {
 }
 
 static int hotkey_systemAssigned(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     luaL_checktype(L, 1, LUA_TTABLE);
     UInt32 keycode = (UInt32)luaL_checkinteger(L, 2);
@@ -233,7 +241,7 @@ static int hotkey_systemAssigned(lua_State* L) {
 }
 
 static int hotkey_enable(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
     [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
 
     hotkey_t* hotkey = lua_touserdata(L, 1);
@@ -246,8 +254,7 @@ static int hotkey_enable(lua_State* L) {
         [skin logBreadcrumb:@"hs.hotkey:enable() we think the hotkey is disabled, but it has a Carbon event. Proceeding, but this is a leak."];
     }
 
-    hotkey->uid = store_hotkey(L, 1);
-    EventHotKeyID hotKeyID = { .signature = 'HMSP', .id = hotkey->uid };
+    EventHotKeyID hotKeyID = { .signature = 'HMSP', .id = hotkey->monotonicID };
     OSStatus result = RegisterEventHotKey(hotkey->keycode, hotkey->mods, hotKeyID, GetEventDispatcherTarget(), kEventHotKeyExclusive, &hotkey->carbonHotKey);
 
     if (result == noErr) {
@@ -259,8 +266,6 @@ static int hotkey_enable(lua_State* L) {
             [skin logError:@"This hotkey is already registered. It may be a duplicate in your Hammerspoon config, or it may be registered by macOS. See System Preferences->Keyboard->Shortcuts"];
         }
 
-        hotkey->uid = remove_hotkey(L, hotkey->uid);
-
         lua_pushnil(L) ;
     }
 
@@ -268,13 +273,12 @@ static int hotkey_enable(lua_State* L) {
 }
 
 static void stop(lua_State* L, hotkey_t* hotkey) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     if (!hotkey->enabled)
         return;
 
     hotkey->enabled = NO;
-    hotkey->uid = remove_hotkey(L, hotkey->uid);
 
     if (!hotkey->carbonHotKey) {
         [skin logBreadcrumb:@"hs.hotkey stop() we think the hotkey is enabled, but it has no Carbon event. Refusing to unregister."];
@@ -297,11 +301,14 @@ static int hotkey_disable(lua_State* L) {
 }
 
 static int hotkey_gc(lua_State* L) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
     hotkey_t* hotkey = luaL_checkudata(L, 1, USERDATA_TAG);
 
     stop(L, hotkey);
+
+    [hotkeys removeObjectForKey:[NSNumber numberWithUnsignedInt:hotkey->monotonicID]];
+    [skin destroyGCCanary:&(hotkey->lsCanary)];
 
     hotkey->pressedfn = [skin luaUnref:refTable ref:hotkey->pressedfn];
     hotkey->releasedfn = [skin luaUnref:refTable ref:hotkey->releasedfn];
@@ -310,10 +317,8 @@ static int hotkey_gc(lua_State* L) {
     return 0;
 }
 
-static EventHandlerRef eventhandler;
-
 static OSStatus hotkey_callback(EventHandlerCallRef __attribute__ ((unused)) inHandlerCallRef, EventRef inEvent, void *inUserData) {
-    LuaSkin *skin = [LuaSkin shared];
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
     EventHotKeyID eventID;
     int eventKind;
     int eventUID;
@@ -333,12 +338,22 @@ static OSStatus hotkey_callback(EventHandlerCallRef __attribute__ ((unused)) inH
 
 static OSStatus trigger_hotkey_callback(int eventUID, int eventKind, BOOL isRepeat) {
     //NSLog(@"trigger_hotkey_callback: isDown: %s, isUp: %s, isRepeat: %s", (eventKind == kEventHotKeyPressed) ? "YES" : "NO", (eventKind == kEventHotKeyReleased) ? "YES" : "NO", isRepeat ? "YES" : "NO");
-    LuaSkin *skin = [LuaSkin shared];
-    lua_State *L = skin.L;
-    _lua_stackguard_entry(L);
+    LuaSkin *skin = [LuaSkin sharedWithState:NULL];
 
-    hotkey_t* hotkey = push_hotkey(L, eventUID);
-    lua_pop(L, 1);
+    lua_State *L = skin.L;
+
+    NSValue *hkValue = [hotkeys objectForKey:[NSNumber numberWithUnsignedInt:eventUID]];
+    if (!hkValue) {
+        [skin logWarn:[NSString stringWithFormat:@"hs.hotkey system callback for an eventUID we don't know about: %d", eventUID]];
+        return noErr;
+    }
+    hotkey_t *hotkey = (hotkey_t *)hkValue.pointerValue;
+
+    if (![skin checkGCCanary:hotkey->lsCanary]) {
+        return noErr;
+    }
+
+    _lua_stackguard_entry(L);
 
     if (!isRepeat) {
         //NSLog(@"trigger_hotkey_callback: not a repeat, killing the timer if it's running");
@@ -381,6 +396,8 @@ static int meta_gc(lua_State* L __unused) {
     [keyRepeatManager stopTimer];
     keyRepeatManager = nil;
 
+    [hotkeys removeAllObjects];
+
     return 0;
 }
 
@@ -411,10 +428,12 @@ static const luaL_Reg hotkey_objectlib[] = {
     {NULL, NULL}
 };
 
-int luaopen_hs_hotkey_internal(lua_State* L __unused) {
-    LuaSkin *skin = [LuaSkin shared];
+int luaopen_hs_hotkey_internal(lua_State* L) {
+    LuaSkin *skin = [LuaSkin sharedWithState:L];
 
-    handlers = [NSMutableIndexSet indexSet];
+    if (!hotkeys) {
+        hotkeys = [[NSMutableDictionary alloc] init];
+    }
     keyRepeatManager = [[HSKeyRepeatManager alloc] init];
 
     refTable = [skin registerLibraryWithObject:USERDATA_TAG functions:hotkeylib metaFunctions:metalib objectFunctions:hotkey_objectlib];

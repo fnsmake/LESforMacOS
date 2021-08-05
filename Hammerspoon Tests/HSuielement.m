@@ -8,11 +8,11 @@
 
 #import "HSTestCase.h"
 
-@interface HSuielement : HSTestCase
+@interface HSuielementTests : HSTestCase
 
 @end
 
-@implementation HSuielement
+@implementation HSuielementTests
 
 - (void)setUp {
     [super setUpWithRequire:@"test_uielement"];
@@ -24,10 +24,23 @@
     [super tearDown];
 }
 
-- (void)testWatcher {
+- (void)testWindowWatcher {
     SKIP_IN_TRAVIS()
-    [self luaTestWithCheckAndTimeOut:5 setupCode:@"testWatcher()" checkCode:@"testWatcherValues()"];
+    SKIP_IN_GITHUB_ACTIONS()
+    RUN_TWO_PART_LUA_TEST_WITH_TIMEOUT(5)
 }
+
+- (void)testApplicationWatcher {
+    SKIP_IN_TRAVIS()
+    SKIP_IN_GITHUB_ACTIONS()
+    RUN_TWO_PART_LUA_TEST_WITH_TIMEOUT(5)
+}
+
+// Disabled for now, until we can figure out a test that actually works
+//- (void)testUIelementWatcher {
+//    SKIP_IN_TRAVIS()
+//    RUN_TWO_PART_LUA_TEST_WITH_TIMEOUT(5)
+//}
 
 - (void)testHammerspoonElements {
     SKIP_IN_TRAVIS()
@@ -36,6 +49,7 @@
 
 - (void)testSelectedText {
     SKIP_IN_TRAVIS()
+    SKIP_IN_GITHUB_ACTIONS()
     RUN_LUA_TEST()
 }
 

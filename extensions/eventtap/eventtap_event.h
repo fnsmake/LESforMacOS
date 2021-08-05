@@ -5,8 +5,16 @@
 @import Carbon ;
 @import LuaSkin ;
 
-#define EVENT_USERDATA_TAG  "hs.eventtap.event"
-#define MODS_USERDATA_TAG   "hs.eventtap.event.modifiers"
+#define EVENT_USERDATA_TAG          "hs.eventtap.event"
+#define APPLICATION_USERDATA_TAG    "hs.application"
+#define MODS_USERDATA_TAG           "hs.eventtap.event.modifiers"
+
+@interface NSTouch (private)
+@property (atomic, readonly) NSPoint previousNormalizedPosition ;
+@property (atomic, readonly) double  timestamp ;
+
+- (double)_force ;
+@end
 
 NSPoint hs_topoint(lua_State* L, int idx) {
     luaL_checktype(L, idx, LUA_TTABLE);
