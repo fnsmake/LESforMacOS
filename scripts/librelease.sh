@@ -16,7 +16,7 @@ function assert() {
   export GITHUB_TOKEN
   export CODESIGN_AUTHORITY_TOKEN
   assert_gawk
-  assert_xcpretty
+  assert_xcbeautify
   if [ "${NIGHTLY}" == "0" ]; then
     assert_github_hub
   fi
@@ -119,13 +119,9 @@ function assert_gawk() {
   fi
 }
 
-function assert_xcpretty() {
-  if [ "$(which xcpretty)" == "" ]; then
-    fail "xcpretty is not in PATH. gem install xcpretty"
-  fi
-
-  if [ "$(which xcpretty-actions-formatter)" == "" ]; then
-    fail "xcpretty-actions-formatter is not in PATH. gem install xcpretty-actions-formatter"
+function assert_xcbeautify() {
+  if [ "$(which xcbeautify)" == "" ]; then
+    fail "xcbeautify is not in PATH. brew install xcbeautify"
   fi
 }
 
@@ -287,11 +283,16 @@ function assert_gatekeeper_acceptance() {
 
 function assert_entitlements() {
     echo "Ensuring Entitlements applied..."
-    TARGET=$(cat "${HAMMERSPOON_HOME}/Hammerspoon/Hammerspoon.entitlements")
-    APP=$(codesign --display --entitlements :- "${HAMMERSPOON_HOME}/build/Hammerspoon.app")
+    TARGET=$(cat "${HAMMERSPOON_HOME}/Hammerspoon/Hammerspoon.entitlements" | xmllint --c14n --format - 2>/dev/null)
+    APP=$(codesign --display --entitlements - --xml "${HAMMERSPOON_HOME}/build/Hammerspoon.app" | xmllint --c14n --format - 2>/dev/null)
 
     if [ "${TARGET}" != "${APP}" ]; then
-        fail "Entitlements did not apply correctly: ${APP}"
+        echo "***** EXPECTED ENTITLEMENTS:"
+        echo "${TARGET}"
+        echo "***** ACTUAL ENTITLEMENTS:"
+        echo "${APP}"
+        echo "*****"
+        fail "Entitlements did not apply correctly"
     fi
 }
 
@@ -361,6 +362,8 @@ function wait_for_notarization() {
             break
         elif [ "${OUTPUT}" == "Working" ]; then
             echo -n "."
+        elif [ "${OUTPUT}" == "No URL yet" ]; then
+            echo -n "_"
         else
             echo ""
             fail "Unknown output: ${OUTPUT}"
@@ -386,6 +389,10 @@ function check_notarization_status() {
 
     local NOTARIZATION_LOG_URL=""
     NOTARIZATION_LOG_URL=$(echo "${OUTPUT}" | grep "LogFileURL: " | awk '{ print $2 }')
+    if [ "${NOTARIZATION_LOG_URL}" == "" ]; then
+        echo "No URL yet"
+        return
+    fi
     echo "Fetching Notarization log: ${NOTARIZATION_LOG_URL}" >/dev/stderr
     local STATUS=""
     STATUS=$(curl "${NOTARIZATION_LOG_URL}")
